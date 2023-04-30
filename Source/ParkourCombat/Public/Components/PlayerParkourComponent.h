@@ -62,7 +62,6 @@ protected:
 
 	void InRunningState();
 
-	bool VaultingCheck() const;
 	
 	
 	// ============================================= Idle =============================================
@@ -70,10 +69,20 @@ protected:
 	void EnterIdleState();
 	
 	// ============================================= Flip Through Table =============================================
+	bool VaultingCheck() const;
 
 	void BeginVaulting();
 	
 	void EnterVaultingState();
+
+	
+	// ============================================= Slide =============================================
+	bool SlidingCheck();
+
+	void BeginSlide();
+
+	void EnterSlideState();
+
 	
 	
 	// ============================================= Utility =============================================

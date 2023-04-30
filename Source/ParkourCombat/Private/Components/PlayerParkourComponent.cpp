@@ -112,8 +112,10 @@ void UPlayerParkourComponent::InRunningState()
 {
 	if(VaultingCheck())
 		BeginVaulting();
-	
-	
+
+	if(SlidingCheck())
+		BeginSlide();
+		
 		
 	
 	
@@ -160,10 +162,8 @@ bool UPlayerParkourComponent::VaultingCheck() const
 	EnoughSpaceStartPos.Z += (VaultingWallHeight + HemisphereCapRadius);
 
 	const FVector PlayerDownVector = PlayerOwnerRef->GetActorUpVector() * -1;
-	UCapsuleComponent* PlayerCapsule = PlayerOwnerRef->GetCapsuleComponent();
-	if(!PlayerCapsule) return false;
 	
-	const float PlayerGroundZ = (PlayerCurrentPos + (PlayerDownVector * PlayerCapsule->GetScaledCapsuleHalfHeight())).Z;
+	const float PlayerGroundZ = (PlayerCurrentPos + (PlayerDownVector * PlayerCapsuleCompRef->GetScaledCapsuleHalfHeight())).Z;
 	const FVector EnoughSpaceEndPos = FVector(EnoughSpaceStartPos.X, EnoughSpaceStartPos.Y, (PlayerGroundZ + VaultingWallHeight + HemisphereCapRadius));
 	
 	// Sphere trace by channel from Kismet System Library
@@ -215,6 +215,66 @@ void UPlayerParkourComponent::EnterVaultingState()
 	SetNewParkourState(ParkourStatus::VaultThroughSmallWall);
 }
 
+// ============================================= Slide =============================================
+bool UPlayerParkourComponent::SlidingCheck()
+{
+	const FVector CurrentPlayerPos = PlayerOwnerRef->GetActorLocation();
+	const FVector CurrentForwardDir = PlayerOwnerRef->GetActorForwardVector();
+	const float PlayerCapsuleHalfHeight = PlayerCapsuleCompRef->GetScaledCapsuleHalfHeight();
+
+	// Hit result
+	FHitResult Hit;
+	// Empty array of ignoring actor, maybe add Enemies classes to be ignored
+	TArray<AActor*> IgnoreActors;
+	IgnoreActors.Add(PlayerOwnerRef);
+
+
+	// FIRST CHECK: is close enough to trigger sliding
+	// Get start and end positions
+	const FVector InRangeStartPos = FVector(CurrentPlayerPos.X, CurrentPlayerPos.Y, (CurrentPlayerPos.Z + PlayerCapsuleHalfHeight));
+	const FVector InRangeEndPos = InRangeStartPos + (CurrentForwardDir * 220.0f);
+
+	// Sphere trace by channel from Kismet System Library
+	const bool bIsInRange = UKismetSystemLibrary::SphereTraceSingle(this, InRangeStartPos, InRangeEndPos, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
+	if(!bIsInRange) return false;
+
+	// SECOND CHECK: no object blocking player's slide
+	const float OffsetToBlockCheck = PlayerCapsuleHalfHeight - 30;
+	const FVector CheckBlockingStart = FVector(CurrentPlayerPos.X, CurrentPlayerPos.Y, (CurrentPlayerPos.Z - OffsetToBlockCheck));
+	const FVector CheckBlockingEnd = CheckBlockingStart + (CurrentForwardDir * 550.0f);
+
+	// Sphere trace by channel from Kismet System Library
+	const bool bIsBlocked = UKismetSystemLibrary::SphereTraceSingle(this, CheckBlockingStart, CheckBlockingEnd, 25.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
+	if(bIsBlocked) return false;
+
+
+	// THIRD CHECK: Has space to get up
+	const float OffsetToGetUp = PlayerCapsuleHalfHeight * 2;
+	const FVector GetUpEndPos = FVector(CheckBlockingEnd.X, CheckBlockingEnd.Y, (CheckBlockingEnd.Z + OffsetToGetUp));
+	const bool bUnableToGetUp = UKismetSystemLibrary::SphereTraceSingle(this, CheckBlockingEnd, GetUpEndPos, 25.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
+	if(bUnableToGetUp) return false;
+	
+	
+	return true;
+}
+
+void UPlayerParkourComponent::BeginSlide()
+{
+	CurrentMontage = StylishSlideThrough;
+	if(!CurrentMontage) return;
+	
+	EnterSlideState();
+
+	BeginParkourAction();
+
+	PlayerOwnerRef->PlayAnimMontage(CurrentMontage,1.2,"Default");
+}
+
+
+void UPlayerParkourComponent::EnterSlideState()
+{
+	SetNewParkourState(ParkourStatus::SlideThrough);
+}
 
 // ============================================= Utility =============================================
 bool UPlayerParkourComponent::IsRunning()
