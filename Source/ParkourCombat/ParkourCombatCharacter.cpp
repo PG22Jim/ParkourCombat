@@ -64,6 +64,16 @@ void AParkourCombatCharacter::BeginPlay()
 			Subsystem->AddMappingContext(DefaultMappingContext, 0);
 		}
 	}
+
+	
+	
+}
+
+void AParkourCombatCharacter::OnParkourActionEnd_Implementation()
+{
+	IParkourInterface::OnParkourActionEnd_Implementation();
+
+	const bool IsExecuted = OnExecuteFinishParkourAction.ExecuteIfBound();
 }
 
 //////////////////////////////////////////////////////////////////////////

@@ -5,11 +5,15 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
+#include "Player/ParkourInterface.h"
 #include "ParkourCombatCharacter.generated.h"
 
 
+DECLARE_DYNAMIC_DELEGATE(FOnExecuteFinishParkourAction);
+
+
 UCLASS(config=Game)
-class AParkourCombatCharacter : public ACharacter
+class AParkourCombatCharacter : public ACharacter, public IParkourInterface
 {
 	GENERATED_BODY()
 
@@ -24,7 +28,7 @@ class AParkourCombatCharacter : public ACharacter
 	/** MappingContext */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputMappingContext* DefaultMappingContext;
-
+	
 	/** Jump Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* JumpAction;
@@ -38,6 +42,10 @@ class AParkourCombatCharacter : public ACharacter
 	class UInputAction* LookAction;
 
 public:
+
+	FOnExecuteFinishParkourAction OnExecuteFinishParkourAction;
+
+
 	AParkourCombatCharacter();
 	
 
@@ -62,5 +70,10 @@ public:
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	/** Returns FollowCamera subobject **/
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+
+
+	virtual void OnParkourActionEnd_Implementation() override;
+
+	
 };
 
