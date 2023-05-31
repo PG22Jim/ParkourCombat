@@ -27,6 +27,7 @@ protected:
 
 	UCapsuleComponent* PlayerCapsuleCompRef;
 	UCharacterMovementComponent* PlayerChaMoveCompRef;
+
 	
 	
 	// Called when the game starts
@@ -36,19 +37,38 @@ protected:
 
 	UAnimMontage* CurrentMontage;
 
+	FTransform CurrentParkourDestination;
+	
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= Parkour_Vaulting)
+	float MaxVaultDistance = 300.0f;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= Parkour_Vaulting)
+	float GapBetweenLandPosAndWall = 50.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= Parkour_Vaulting)
+	float VaultHeight = 100.0f;
+	
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= Parkour_Animations)
 	UAnimMontage* StylishJumpThroughSmallWall;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= Parkour_Animations)
 	UAnimMontage* StylishSlideThrough;
 
-
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= Parkour_Animations)
+	UAnimMontage* WallClimbToSprint;
+	
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)	
 	ParkourStatus CurrentParkourStatus = ParkourStatus::Idle;
 
 	FTimerHandle ParkourTickTimerHandle;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TArray<FTransform> ParkourMovingDestinations;
+
+	
 
 	// ============================================= Parkour =============================================
 
@@ -75,6 +95,8 @@ protected:
 	
 	void EnterVaultingState();
 
+	UFUNCTION(BlueprintCallable)
+	void TryToGetPositionsToVault();
 	
 	// ============================================= Slide =============================================
 	bool SlidingCheck();
@@ -83,6 +105,15 @@ protected:
 
 	void EnterSlideState();
 
+
+	// =================================================== Quick Wall Climb =========================================
+
+	bool WallClimbCheck();
+
+	void BeginWallClimb();
+
+	void EnterWallClimbState();
+	
 	
 	
 	// ============================================= Utility =============================================
@@ -95,10 +126,20 @@ protected:
 
 	UFUNCTION()
 	void FinishParkourAction();
+
+	void ClearParkourList();
+
+	void StoreFoundDestinations(TArray<FVector> FoundDestArray);
+
+	UFUNCTION()
+	void OnUpdateDestination();
+	
+	UFUNCTION(BlueprintImplementableEvent)
+	void MotionWrapUpdatDestination(FTransform NextDestination);
 	
 
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
-	void TestFunction();
+	void TestFunction(FVector Destination);
 	
 	
 public:
@@ -111,3 +152,14 @@ public:
 
 		
 };
+
+inline void UPlayerParkourComponent::OnUpdateDestination()
+{
+	// // TODO: Use Linkedlist instead
+	// if(CurrentParkourDestination == FTransform())
+	// {
+	// 	
+	// }
+	// int32 CurrentIndex = ParkourMovingDestinations.Find(CurrentParkourDestination);
+	
+}

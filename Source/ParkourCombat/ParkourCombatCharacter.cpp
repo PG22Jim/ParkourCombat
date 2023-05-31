@@ -9,6 +9,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Kismet/KismetMathLibrary.h"
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -27,7 +28,8 @@ AParkourCombatCharacter::AParkourCombatCharacter()
 	// Configure character movement
 	GetCharacterMovement()->bOrientRotationToMovement = true; // Character moves in the direction of input...	
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 500.0f, 0.0f); // ...at this rotation rate
-
+	
+	
 	// Note: For faster iteration times these variables, and many more, can be tweaked in the Character Blueprint
 	// instead of recompiling to adjust them
 	GetCharacterMovement()->JumpZVelocity = 700.f;
@@ -38,7 +40,7 @@ AParkourCombatCharacter::AParkourCombatCharacter()
 
 	// Create a camera boom (pulls in towards the player if there is a collision)
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
-	CameraBoom->SetupAttachment(RootComponent);
+	CameraBoom->SetupAttachment(GetMesh(), "spine_03");
 	CameraBoom->TargetArmLength = 400.0f; // The camera follows at this distance behind the character	
 	CameraBoom->bUsePawnControlRotation = true; // Rotate the arm based on the controller
 
@@ -67,6 +69,40 @@ void AParkourCombatCharacter::BeginPlay()
 
 	
 	
+}
+
+void AParkourCombatCharacter::LinkListTest_AddRandomData()
+{
+	const float RandomX = UKismetMathLibrary::RandomFloatInRange(0,100);
+	const float RandomY = UKismetMathLibrary::RandomFloatInRange(0,100);
+	const float RandomZ = UKismetMathLibrary::RandomFloatInRange(0,100);
+	const FVector RandomVector = FVector(RandomX, RandomY, RandomZ);
+	const FTransform RandomTransData = FTransform(RandomVector);
+	
+	StoredDestinationList->AddAtTail(RandomTransData);
+}
+
+void AParkourCombatCharacter::LinkListTest_PrintAll()
+{
+	if(StoredDestinationList->GetSizeNum() > 0)
+	{
+		ParkourPositionData* IterationData = StoredDestinationList->GetHead();
+
+		while (IterationData)
+		{
+			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red,IterationData->TransformData.ToString());
+			IterationData = IterationData->NextTransform;
+		}
+
+		return;
+	}
+
+	GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("No Data in List"));	
+}
+
+void AParkourCombatCharacter::LinkListTest_ClearAll()
+{
+	StoredDestinationList->ClearList();
 }
 
 void AParkourCombatCharacter::OnParkourActionEnd_Implementation()

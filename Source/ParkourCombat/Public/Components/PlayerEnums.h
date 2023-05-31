@@ -10,6 +10,7 @@ enum class ParkourStatus: uint8
 	Running = 2 UMETA(DisplayName = "Running"),
 	VaultThroughSmallWall = 3 UMETA(DisplayName = "VaultThroughSmallWall"),
 	SlideThrough = 4 UMETA(DisplayName = "SlideThrough"),
+	QuickWallClimb = 5 UMETA(DisplayName = "QuickClimb"),
 	
 	//Count UMETA(Hidden)
 };

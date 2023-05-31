@@ -56,6 +56,7 @@ void UPlayerParkourComponent::TryGetOwnerReference()
 void UPlayerParkourComponent::InitializeDelegate()
 {
 	PlayerOwnerRef->OnExecuteFinishParkourAction.BindDynamic(this, &UPlayerParkourComponent::FinishParkourAction);
+	
 }
 
 void UPlayerParkourComponent::ParkourTickStart()
@@ -110,11 +111,18 @@ void UPlayerParkourComponent::EnterRunningState()
 	
 void UPlayerParkourComponent::InRunningState()
 {
-	if(VaultingCheck())
-		BeginVaulting();
+	// if(VaultingCheck())
+	// {
+	// 	ClearParkourList();
+	// 	TryToGetPositionsToVault();
+	// 	BeginVaulting();
+	// }
+	//
+	// if(SlidingCheck())
+	// 	BeginSlide();
 
-	if(SlidingCheck())
-		BeginSlide();
+	// if(WallClimbCheck())
+	// 	BeginWallClimb();
 		
 		
 	
@@ -276,6 +284,79 @@ void UPlayerParkourComponent::EnterSlideState()
 	SetNewParkourState(ParkourStatus::SlideThrough);
 }
 
+// =================================================== Quick Wall Climb =========================================
+
+bool UPlayerParkourComponent::WallClimbCheck()
+{
+	const FVector CurrentPlayerPos = PlayerOwnerRef->GetActorLocation();
+	const FVector CurrentForwardDir = PlayerOwnerRef->GetActorForwardVector();
+	const float PlayerCapsuleHalfHeight = PlayerCapsuleCompRef->GetScaledCapsuleHalfHeight();
+
+	// Hit result
+	FHitResult Hit;
+	// Empty array of ignoring actor, maybe add Enemies classes to be ignored
+	TArray<AActor*> IgnoreActors;
+	IgnoreActors.Add(PlayerOwnerRef);
+
+
+	// FIRST CHECK: is close enough to trigger sliding
+	// Get start and end positions
+	const float OffsetToBlockCheck = PlayerCapsuleHalfHeight - 30;
+	const FVector InRangeStartPos = FVector(CurrentPlayerPos.X, CurrentPlayerPos.Y, (CurrentPlayerPos.Z - OffsetToBlockCheck));
+	const FVector InRangeEndPos = InRangeStartPos + (CurrentForwardDir * 325.0f);
+
+	// Sphere trace by channel from Kismet System Library
+	const bool bIsInRange = UKismetSystemLibrary::SphereTraceSingle(this, InRangeStartPos, InRangeEndPos, 25.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
+	if(!bIsInRange) return false;
+	
+	// SECOND CHECK: has enough space for player to run before wall climbing
+	const FVector InRangeHitPos = Hit.Location;
+	FVector InRangeHitPosWithSameZ = InRangeHitPos;
+	InRangeHitPosWithSameZ.Z = CurrentPlayerPos.Z;
+	const float DistanceToWall = UKismetMathLibrary::Vector_Distance(CurrentPlayerPos, InRangeHitPosWithSameZ);
+	const bool IsFarEnough = DistanceToWall > 310.0f;
+
+	if(!IsFarEnough) return false;
+	
+	
+	// THIRD CHECK: has enough space to climb
+	const FVector HasSpaceToClimbStart = Hit.Location - (CurrentForwardDir * 30.0f);
+	const FVector HasSpaceToClimbEnd = FVector(HasSpaceToClimbStart.X, HasSpaceToClimbStart.Y, (HasSpaceToClimbStart.Z + 250.0f));
+
+	const bool bNoSpaceToClimb = UKismetSystemLibrary::SphereTraceSingle(this, HasSpaceToClimbStart, HasSpaceToClimbEnd, 25.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
+	if(bNoSpaceToClimb) return false;
+
+	
+	// FOURTH CHECK: has enough space to land
+	const FVector HasSpaceToLandEnd = HasSpaceToClimbEnd + (CurrentForwardDir * 100.0f);
+	const bool bNoSpaceToLand = UKismetSystemLibrary::SphereTraceSingle(this, HasSpaceToClimbEnd, HasSpaceToLandEnd, 25.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
+	if(bNoSpaceToLand) return false;
+
+	// FIFTH CHECK: has ground to land
+	const FVector IsValidLandingEnd = HasSpaceToLandEnd - FVector(0,0,10);
+	const bool bIsValidLanding = UKismetSystemLibrary::SphereTraceSingle(this, HasSpaceToLandEnd, IsValidLandingEnd, 25.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
+	if(!bIsValidLanding) return false;
+
+	return true;
+}
+
+void UPlayerParkourComponent::BeginWallClimb()
+{
+	CurrentMontage = WallClimbToSprint;
+	if(!CurrentMontage) return;
+	
+	EnterWallClimbState();
+
+	BeginParkourAction();
+
+	PlayerOwnerRef->PlayAnimMontage(CurrentMontage,1.2,"Default");
+}
+
+void UPlayerParkourComponent::EnterWallClimbState()
+{
+	SetNewParkourState(ParkourStatus::QuickWallClimb);
+}
+
 // ============================================= Utility =============================================
 bool UPlayerParkourComponent::IsRunning()
 {
@@ -306,6 +387,92 @@ void UPlayerParkourComponent::FinishParkourAction()
 	PlayerChaMoveCompRef->SetMovementMode(EMovementMode::MOVE_Walking);
 
 	SetNewParkourState(ParkourStatus::Idle);
+}
+
+void UPlayerParkourComponent::ClearParkourList()
+{
+	ParkourMovingDestinations.Empty();
+}
+
+void UPlayerParkourComponent::StoreFoundDestinations(TArray<FVector> FoundDestArray)
+{
+	for (FVector EachDest : FoundDestArray)
+	{
+		FTransform EachDestTransform = UKismetMathLibrary::Conv_VectorToTransform(EachDest);
+		ParkourMovingDestinations.Add(EachDestTransform);
+	}
+}
+
+void UPlayerParkourComponent::TryToGetPositionsToVault()
+{
+	// Hit result
+	FHitResult Hit;
+	// Empty array of ignoring actor, maybe add Enemies classes to be ignored
+	TArray<AActor*> IgnoreActors;
+	IgnoreActors.Add(PlayerOwnerRef);
+
+	// 1ST POSITION: Get Hit point from first running end
+	const FVector CurrentForwardDir = PlayerOwnerRef->GetActorForwardVector();
+	const FVector PlayerCurrentPos = PlayerOwnerRef->GetActorLocation();
+	const FVector InRangeEndPos = PlayerCurrentPos + (CurrentForwardDir * 200.0f);
+
+	// Sphere trace by channel from Kismet System Library
+	const bool bIsInRange = UKismetSystemLibrary::SphereTraceSingle(this, PlayerCurrentPos, InRangeEndPos, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
+
+	if(bIsInRange)
+	{
+		FVector FirstDestination = Hit.Location;
+		
+		// 2ND POSITION: Get position for player to place hand to vault
+
+		const float HemisphereCapRadius = 15.0f;
+
+		
+		// Get start and end positions
+		FVector PlaceHandPosEnd = FirstDestination + (CurrentForwardDir * 20);
+		const FVector PlayerUPVector = PlayerOwnerRef->GetActorUpVector();
+		
+		FVector PlaceHandPosStart = PlaceHandPosEnd + (PlayerUPVector * VaultHeight);
+		
+		
+		// Sphere trace by channel from Kismet System Library
+		const bool bPlaceHandPos = UKismetSystemLibrary::SphereTraceSingle(this, PlaceHandPosStart, PlaceHandPosEnd, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
+		if(bPlaceHandPos)
+		{
+			const FVector SecondDestination = Hit.Location;
+
+			
+			// 4TH POSITION: Position to land
+			
+			const FVector PlaceToLandStart = FirstDestination + (CurrentForwardDir * MaxVaultDistance);
+			
+
+		
+			const bool bPlaceToLand = UKismetSystemLibrary::SphereTraceSingle(this, PlaceToLandStart, FirstDestination, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
+			if(bPlaceToLand)
+			{
+				FVector FourthDestination = Hit.Location + (CurrentForwardDir * GapBetweenLandPosAndWall);
+
+				FVector ThirdDestination = UKismetMathLibrary::VLerp(SecondDestination, FourthDestination,0.5f);
+				ThirdDestination.Z = SecondDestination.Z + VaultHeight;
+
+				FirstDestination.Z = PlayerCurrentPos.Z;
+				FourthDestination.Z = PlayerCurrentPos.Z;
+				
+				TArray<FVector> FoundDestinations;
+				FoundDestinations.Add(FirstDestination);
+				FoundDestinations.Add(SecondDestination);
+				FoundDestinations.Add(ThirdDestination);
+				FoundDestinations.Add(FourthDestination);
+
+				StoreFoundDestinations(FoundDestinations);
+			}
+		}
+	}
+
+
+	
+	// Return True if all checks are valid
 }
 
 

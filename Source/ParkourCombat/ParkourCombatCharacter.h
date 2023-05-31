@@ -5,11 +5,13 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
+#include "ParkourMovementLinkedList.h"
 #include "Player/ParkourInterface.h"
 #include "ParkourCombatCharacter.generated.h"
 
 
 DECLARE_DYNAMIC_DELEGATE(FOnExecuteFinishParkourAction);
+DECLARE_DYNAMIC_DELEGATE(FOnUpdateParkourDestination);
 
 
 UCLASS(config=Game)
@@ -41,10 +43,13 @@ class AParkourCombatCharacter : public ACharacter, public IParkourInterface
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* LookAction;
 
+
+	ParkourMovementLinkedList* StoredDestinationList = new ParkourMovementLinkedList();
+	
 public:
 
 	FOnExecuteFinishParkourAction OnExecuteFinishParkourAction;
-
+	FOnUpdateParkourDestination OnUpdateParkourDestination;
 
 	AParkourCombatCharacter();
 	
@@ -56,7 +61,13 @@ protected:
 
 	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
-			
+
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)	
+	FVector TeleportPoint = FVector(0,0,0);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)	
+	bool DebugClimb = false;
 
 protected:
 	// APawn interface
@@ -65,6 +76,15 @@ protected:
 	// To add mapping context
 	virtual void BeginPlay();
 
+	UFUNCTION(BlueprintCallable)
+	void LinkListTest_AddRandomData();	
+
+	UFUNCTION(BlueprintCallable)
+	void LinkListTest_PrintAll();
+	
+	UFUNCTION(BlueprintCallable)
+	void LinkListTest_ClearAll();
+	
 public:
 	/** Returns CameraBoom subobject **/
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
