@@ -105,6 +105,29 @@ void AParkourCombatCharacter::LinkListTest_ClearAll()
 	StoredDestinationList->ClearList();
 }
 
+void AParkourCombatCharacter::OnUpdateDestination_Implementation()
+{
+	IParkourInterface::OnUpdateDestination_Implementation();
+	
+	// if Current MotionWarp Destination is nullptr, it means we haven't store yet
+	if(!CurrentMotionWarpDest)
+	{
+		ParkourPositionData* HeadPosition = StoredDestinationList->GetHead();
+		if(!HeadPosition) return;
+		
+		CurrentMotionWarpDest = HeadPosition;
+	}
+	else
+	{
+		ParkourPositionData* NewParkourDest = CurrentMotionWarpDest->NextTransform;
+		if(!NewParkourDest) return;
+	
+		CurrentMotionWarpDest = NewParkourDest;
+	}
+	
+	UpdateCurrentMotionWarpingDest(CurrentMotionWarpDest->TransformData);
+}
+
 void AParkourCombatCharacter::OnParkourActionEnd_Implementation()
 {
 	IParkourInterface::OnParkourActionEnd_Implementation();

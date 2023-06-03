@@ -17,6 +17,16 @@ DECLARE_DYNAMIC_DELEGATE(FOnUpdateParkourDestination);
 UCLASS(config=Game)
 class AParkourCombatCharacter : public ACharacter, public IParkourInterface
 {
+private:
+
+	ParkourPositionData* CurrentMotionWarpDest;
+
+
+	
+protected:
+
+
+	
 	GENERATED_BODY()
 
 	/** Camera boom positioning the camera behind the character */
@@ -44,15 +54,15 @@ class AParkourCombatCharacter : public ACharacter, public IParkourInterface
 	class UInputAction* LookAction;
 
 
-	ParkourMovementLinkedList* StoredDestinationList = new ParkourMovementLinkedList();
 	
 public:
 
 	FOnExecuteFinishParkourAction OnExecuteFinishParkourAction;
 	FOnUpdateParkourDestination OnUpdateParkourDestination;
 
-	AParkourCombatCharacter();
+	ParkourMovementLinkedList* StoredDestinationList = new ParkourMovementLinkedList();
 	
+	AParkourCombatCharacter();
 
 protected:
 
@@ -84,14 +94,25 @@ protected:
 	
 	UFUNCTION(BlueprintCallable)
 	void LinkListTest_ClearAll();
+
+	
 	
 public:
+	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
+	void UpdateMotionWarpingDestination_Vaulting(FTransform FirstDest, FTransform SecondDest, FTransform ThirdDest, FTransform FinalDest);
+
+	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
+	void UpdateCurrentMotionWarpingDest(FTransform NewTransform);
+
+	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
+	void DebugSphere(FVector Pos);
+	
 	/** Returns CameraBoom subobject **/
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	/** Returns FollowCamera subobject **/
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 
-
+	virtual void OnUpdateDestination_Implementation() override;
 	virtual void OnParkourActionEnd_Implementation() override;
 
 	

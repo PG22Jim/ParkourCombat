@@ -111,12 +111,12 @@ void UPlayerParkourComponent::EnterRunningState()
 	
 void UPlayerParkourComponent::InRunningState()
 {
-	// if(VaultingCheck())
-	// {
-	// 	ClearParkourList();
-	// 	TryToGetPositionsToVault();
-	// 	BeginVaulting();
-	// }
+	if(VaultingCheck())
+	{
+		ClearParkourList();
+		TryToGetPositionsToVault();
+		BeginVaulting();
+	}
 	//
 	// if(SlidingCheck())
 	// 	BeginSlide();
@@ -162,8 +162,8 @@ bool UPlayerParkourComponent::VaultingCheck() const
 	// THIRD CHECK: is wall small enough for vaulting
 
 	const float VaultingWallHeight = 100.0f;
-	const float HemisphereCapRadius = 15.0f;
-
+	float HemisphereCapRadius = 0.0f;
+	HemisphereCapRadius += 15;
 	
 	// Get start and end positions
 	FVector EnoughSpaceStartPos = InRangeHitPos + (CurrentForwardDir * 30);
@@ -210,10 +210,13 @@ void UPlayerParkourComponent::BeginVaulting()
 	CurrentMontage = StylishJumpThroughSmallWall;
 	if(!CurrentMontage) return;
 	
+	//PlayerOwnerRef->OnUpdateDestination_Implementation();
+	
 	EnterVaultingState();
 
+	
 	BeginParkourAction();
-
+	
 	PlayerOwnerRef->PlayAnimMontage(CurrentMontage,1,"Default");
 
 }
@@ -396,10 +399,19 @@ void UPlayerParkourComponent::ClearParkourList()
 
 void UPlayerParkourComponent::StoreFoundDestinations(TArray<FVector> FoundDestArray)
 {
+	if(!PlayerOwnerRef) return;
+	
+	// Erase All Stored Parkour destination on the list
+	PlayerOwnerRef->StoredDestinationList->ClearList();
+
+	
+	
+	const FRotator CurrentPlayerRotation = PlayerOwnerRef->GetActorRotation();
+
 	for (FVector EachDest : FoundDestArray)
 	{
-		FTransform EachDestTransform = UKismetMathLibrary::Conv_VectorToTransform(EachDest);
-		ParkourMovingDestinations.Add(EachDestTransform);
+		FTransform EachDestTransform = UKismetMathLibrary::MakeTransform(EachDest, CurrentPlayerRotation);
+		PlayerOwnerRef->StoredDestinationList->AddAtHead(EachDestTransform);
 	}
 }
 
@@ -417,11 +429,13 @@ void UPlayerParkourComponent::TryToGetPositionsToVault()
 	const FVector InRangeEndPos = PlayerCurrentPos + (CurrentForwardDir * 200.0f);
 
 	// Sphere trace by channel from Kismet System Library
-	const bool bIsInRange = UKismetSystemLibrary::SphereTraceSingle(this, PlayerCurrentPos, InRangeEndPos, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
+	const bool bIsInRange = UKismetSystemLibrary::SphereTraceSingle(this, PlayerCurrentPos, InRangeEndPos, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::Persistent, Hit, true);
 
 	if(bIsInRange)
 	{
 		FVector FirstDestination = Hit.Location;
+		FirstDestination -= (CurrentForwardDir * 20);
+		
 		
 		// 2ND POSITION: Get position for player to place hand to vault
 
@@ -429,14 +443,14 @@ void UPlayerParkourComponent::TryToGetPositionsToVault()
 
 		
 		// Get start and end positions
-		FVector PlaceHandPosEnd = FirstDestination + (CurrentForwardDir * 20);
+		FVector PlaceHandPosEnd = FirstDestination + (CurrentForwardDir * 40);
 		const FVector PlayerUPVector = PlayerOwnerRef->GetActorUpVector();
 		
 		FVector PlaceHandPosStart = PlaceHandPosEnd + (PlayerUPVector * VaultHeight);
 		
 		
 		// Sphere trace by channel from Kismet System Library
-		const bool bPlaceHandPos = UKismetSystemLibrary::SphereTraceSingle(this, PlaceHandPosStart, PlaceHandPosEnd, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
+		const bool bPlaceHandPos = UKismetSystemLibrary::SphereTraceSingle(this, PlaceHandPosStart, PlaceHandPosEnd, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::Persistent, Hit, true);
 		if(bPlaceHandPos)
 		{
 			const FVector SecondDestination = Hit.Location;
@@ -448,31 +462,52 @@ void UPlayerParkourComponent::TryToGetPositionsToVault()
 			
 
 		
-			const bool bPlaceToLand = UKismetSystemLibrary::SphereTraceSingle(this, PlaceToLandStart, FirstDestination, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
-			if(bPlaceToLand)
+			const bool bPlaceToLandHorizontal = UKismetSystemLibrary::SphereTraceSingle(this, PlaceToLandStart, FirstDestination, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::Persistent, Hit, true);
+			if(bPlaceToLandHorizontal)
 			{
 				FVector FourthDestination = Hit.Location + (CurrentForwardDir * GapBetweenLandPosAndWall);
 
+
+				// 3RD POSITION: Position in mid air
+				
 				FVector ThirdDestination = UKismetMathLibrary::VLerp(SecondDestination, FourthDestination,0.5f);
-				ThirdDestination.Z = SecondDestination.Z + VaultHeight;
+				ThirdDestination.Z = SecondDestination.Z + (VaultHeight / 6);
 
 				FirstDestination.Z = PlayerCurrentPos.Z;
-				FourthDestination.Z = PlayerCurrentPos.Z;
-				
-				TArray<FVector> FoundDestinations;
-				FoundDestinations.Add(FirstDestination);
-				FoundDestinations.Add(SecondDestination);
-				FoundDestinations.Add(ThirdDestination);
-				FoundDestinations.Add(FourthDestination);
 
-				StoreFoundDestinations(FoundDestinations);
+
+				if(UKismetSystemLibrary::SphereTraceSingle(this, FourthDestination, FourthDestination - (PlayerOwnerRef->GetActorUpVector() * 200), 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::Persistent, Hit, true))
+					FourthDestination.Z = Hit.Location.Z;
+				else FourthDestination.Z = PlayerCurrentPos.Z - (PlayerOwnerRef->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() / 2);
+				
+				FRotator CurrentPlayerRotation = PlayerOwnerRef->GetActorRotation();
+				FTransform FirstTransform = UKismetMathLibrary::MakeTransform(FirstDestination, CurrentPlayerRotation);
+				FTransform SecondTransform = UKismetMathLibrary::MakeTransform(SecondDestination, CurrentPlayerRotation);
+				FTransform ThirdTransform = UKismetMathLibrary::MakeTransform(ThirdDestination, CurrentPlayerRotation);
+				FTransform FinalTransform = UKismetMathLibrary::MakeTransform(FourthDestination, CurrentPlayerRotation);
+
+				PlayerOwnerRef->UpdateMotionWarpingDestination_Vaulting(FirstTransform, SecondTransform, ThirdTransform, FinalTransform);
+
+				{
+					TArray<FVector> FoundDestinations;
+					FoundDestinations.Add(FirstDestination);
+					FoundDestinations.Add(SecondDestination);
+					FoundDestinations.Add(ThirdDestination);
+					FoundDestinations.Add(FourthDestination);
+				
+					for (FVector EachVector : FoundDestinations)
+					{
+						TestFunction(EachVector);
+					}
+				}
+
+				//StoreFoundDestinations(FoundDestinations);
 			}
 		}
 	}
 
 
 	
-	// Return True if all checks are valid
 }
 
 
