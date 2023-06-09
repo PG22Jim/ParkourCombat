@@ -20,6 +20,8 @@ private:
 	void InitializeDelegate();
 	void ParkourTickStart();
 
+	bool IsPlayerDoingParkourAction();
+
 protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
@@ -102,7 +104,7 @@ protected:
 	bool SlidingCheck();
 
 	void BeginSlide();
-
+	
 	void EnterSlideState();
 
 

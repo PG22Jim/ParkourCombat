@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
 #include "ParkourMovementLinkedList.h"
+#include "Components/TimelineComponent.h"
 #include "Player/ParkourInterface.h"
 #include "ParkourCombatCharacter.generated.h"
 
@@ -21,6 +22,17 @@ private:
 
 	ParkourPositionData* CurrentMotionWarpDest;
 
+	float MeshCapsuleVerticalOffset = 0;
+	float JumpClimbStartZ = 0;
+
+	UAnimMontage* WallClimbMontage = nullptr;
+
+
+	FTimerHandle RecordPositionTimerHandle;
+	FTimerHandle BackTrackingTimerHandle;
+	FTimerHandle StopBackTrackTimerHandle;
+
+	void ResetPlayerMeshPosition();
 
 	
 protected:
@@ -61,6 +73,8 @@ public:
 	FOnUpdateParkourDestination OnUpdateParkourDestination;
 
 	ParkourMovementLinkedList* StoredDestinationList = new ParkourMovementLinkedList();
+	BackTrackData_Stack* CurrenBackTrackData = new BackTrackData_Stack();
+
 	
 	AParkourCombatCharacter();
 
@@ -78,6 +92,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)	
 	bool DebugClimb = false;
+	
+	UFUNCTION()
+	void OnResumeMeshZPosition(UAnimMontage* Montage, bool bInterrupted);
 
 protected:
 	// APawn interface
@@ -91,21 +108,58 @@ protected:
 
 	UFUNCTION(BlueprintCallable)
 	void LinkListTest_PrintAll();
+
+	UFUNCTION(BlueprintCallable)
+	void LinkListTest_Pop();
 	
 	UFUNCTION(BlueprintCallable)
 	void LinkListTest_ClearAll();
 
+	UFUNCTION(BlueprintCallable)
+	void LinkListTest_DrawPosSphere();
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void DrawTransSphere(FTransform DrawingTrans);
+
+
+	UFUNCTION()
+	void RecordCurrentPositionToList();
 	
+	UFUNCTION()
+	void BackTrackTransform();
+
+	UFUNCTION()
+	void StopBackTracking();
 	
 public:
+
+
+
+	UAnimMontage* GetWallClimbMontage() const {return WallClimbMontage;}
+	void SetWallClimbMontage(UAnimMontage* NewMontage) {WallClimbMontage = NewMontage;}
+
+	void UpdateJumpClimbStartZ();
+
+
+
+	
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
 	void UpdateMotionWarpingDestination_Vaulting(FTransform FirstDest, FTransform SecondDest, FTransform ThirdDest, FTransform FinalDest);
 
+	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
+	void UpdateMotionWarpingDestination_Sliding(FTransform FirstDest, FTransform SecondDest);
+	
+	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
+	void UpdateMotionWarpingDestination_Climbing(FTransform FirstDest, FTransform SecondDest, FTransform ThirdDest, FTransform FinalDest);
+	
+	
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
 	void UpdateCurrentMotionWarpingDest(FTransform NewTransform);
 
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
 	void DebugSphere(FVector Pos);
+
+
 	
 	/** Returns CameraBoom subobject **/
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
@@ -114,6 +168,9 @@ public:
 
 	virtual void OnUpdateDestination_Implementation() override;
 	virtual void OnParkourActionEnd_Implementation() override;
+	virtual void OnUpdateMeshPosition_Implementation() override;
+
+	
 
 	
 };

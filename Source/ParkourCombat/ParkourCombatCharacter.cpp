@@ -15,6 +15,18 @@
 //////////////////////////////////////////////////////////////////////////
 // AParkourCombatCharacter
 
+void AParkourCombatCharacter::ResetPlayerMeshPosition()
+{
+	USkeletalMeshComponent* PlayerSkelMesh = GetMesh();
+	UCapsuleComponent* PlayerCaps = GetCapsuleComponent();
+	if(PlayerCaps && PlayerSkelMesh)
+	{
+		const FVector PlayerCapsWorldPos = PlayerCaps->GetComponentLocation();
+		const FVector CorrectWorldPos = FVector(PlayerCapsWorldPos.X, PlayerCapsWorldPos.Y, PlayerCapsWorldPos.Z - MeshCapsuleVerticalOffset);
+		PlayerSkelMesh->SetWorldLocation(CorrectWorldPos);
+	}
+}
+
 AParkourCombatCharacter::AParkourCombatCharacter()
 {
 	// Set size for collision capsule
@@ -68,7 +80,27 @@ void AParkourCombatCharacter::BeginPlay()
 	}
 
 	
-	
+	USkeletalMeshComponent* PlayerSkelMesh = GetMesh();
+	UCapsuleComponent* PlayerCaps = GetCapsuleComponent();
+	if(PlayerCaps && PlayerSkelMesh)
+	{
+		MeshCapsuleVerticalOffset = PlayerCaps->GetComponentLocation().Z - PlayerSkelMesh->GetComponentLocation().Z;
+	}
+
+	// Bind the event to the function
+	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+	if (AnimInstance)
+	{
+		AnimInstance->OnMontageEnded.AddDynamic(this, &AParkourCombatCharacter::OnResumeMeshZPosition);
+	}
+
+
+	const UWorld* World = GetWorld();
+	if(!World) return;
+
+	FTimerManager& WorldTimerManager = World->GetTimerManager();
+
+	WorldTimerManager.SetTimer(RecordPositionTimerHandle,this, &AParkourCombatCharacter::RecordCurrentPositionToList, 0.015, true, -1);
 }
 
 void AParkourCombatCharacter::LinkListTest_AddRandomData()
@@ -79,20 +111,21 @@ void AParkourCombatCharacter::LinkListTest_AddRandomData()
 	const FVector RandomVector = FVector(RandomX, RandomY, RandomZ);
 	const FTransform RandomTransData = FTransform(RandomVector);
 	
-	StoredDestinationList->AddAtTail(RandomTransData);
+	CurrenBackTrackData->Push(RandomTransData);
 }
 
 void AParkourCombatCharacter::LinkListTest_PrintAll()
 {
-	if(StoredDestinationList->GetSizeNum() > 0)
+	if(CurrenBackTrackData->GetSizeNum() > 0)
 	{
-		ParkourPositionData* IterationData = StoredDestinationList->GetHead();
+		ParkourPositionData* IterationData = CurrenBackTrackData->Peek();
 
 		while (IterationData)
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red,IterationData->TransformData.ToString());
 			IterationData = IterationData->NextTransform;
 		}
+		GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("Print Finish"));	
 
 		return;
 	}
@@ -100,9 +133,72 @@ void AParkourCombatCharacter::LinkListTest_PrintAll()
 	GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("No Data in List"));	
 }
 
+void AParkourCombatCharacter::LinkListTest_Pop()
+{
+	CurrenBackTrackData->Pop();
+}
+
 void AParkourCombatCharacter::LinkListTest_ClearAll()
 {
-	StoredDestinationList->ClearList();
+	CurrenBackTrackData->ClearList();
+}
+
+void AParkourCombatCharacter::LinkListTest_DrawPosSphere()
+{
+	const UWorld* World = GetWorld();
+	if(!World) return;
+
+	FTimerManager& WorldTimerManager = World->GetTimerManager();
+
+	WorldTimerManager.PauseTimer(RecordPositionTimerHandle);
+	WorldTimerManager.SetTimer(BackTrackingTimerHandle,this, &AParkourCombatCharacter::BackTrackTransform, 0.015, true, -1);
+	WorldTimerManager.SetTimer(StopBackTrackTimerHandle,this, &AParkourCombatCharacter::StopBackTracking, 10.0f, false, -1);
+	
+	// if(CurrenBackTrackData->GetSizeNum() > 0)
+	// {
+	// 	ParkourPositionData* IterationData = CurrenBackTrackData->Peek();
+	//
+	// 	while (IterationData)
+	// 	{
+	// 		DrawTransSphere(IterationData->TransformData);
+	// 		IterationData = IterationData->NextTransform;
+	// 	}
+	// }
+
+	
+}
+
+void AParkourCombatCharacter::RecordCurrentPositionToList()
+{
+	const FTransform CurrentTrans = GetActorTransform();
+	CurrenBackTrackData->Push(CurrentTrans);
+}
+
+void AParkourCombatCharacter::BackTrackTransform()
+{
+	ParkourPositionData* CurrentTopData = CurrenBackTrackData->Peek();
+	if(!CurrentTopData) return;
+
+	SetActorTransform(CurrentTopData->TransformData);
+	CurrenBackTrackData->Pop();
+	
+}
+
+void AParkourCombatCharacter::StopBackTracking()
+{
+	const UWorld* World = GetWorld();
+	if(!World) return;
+
+	FTimerManager& WorldTimerManager = World->GetTimerManager();
+
+	WorldTimerManager.UnPauseTimer(RecordPositionTimerHandle);
+	WorldTimerManager.ClearTimer(BackTrackingTimerHandle);
+	
+}
+
+void AParkourCombatCharacter::UpdateJumpClimbStartZ()
+{
+	JumpClimbStartZ = GetMesh()->GetComponentLocation().Z;
 }
 
 void AParkourCombatCharacter::OnUpdateDestination_Implementation()
@@ -135,8 +231,29 @@ void AParkourCombatCharacter::OnParkourActionEnd_Implementation()
 	const bool IsExecuted = OnExecuteFinishParkourAction.ExecuteIfBound();
 }
 
+void AParkourCombatCharacter::OnUpdateMeshPosition_Implementation()
+{
+	IParkourInterface::OnUpdateMeshPosition_Implementation();
+
+	USkeletalMeshComponent* PlayerMeshComp = GetMesh();
+	if(!PlayerMeshComp) return;
+
+	const FVector MeshWorldPos = PlayerMeshComp->GetComponentLocation();
+	const FVector CorrectWorldPos = FVector(MeshWorldPos.X, MeshWorldPos.Y, JumpClimbStartZ);
+	PlayerMeshComp->SetWorldLocation(CorrectWorldPos);
+}
+
 //////////////////////////////////////////////////////////////////////////
 // Input
+
+
+void AParkourCombatCharacter::OnResumeMeshZPosition(UAnimMontage* Montage, bool bInterrupted)
+{
+	if(Montage == WallClimbMontage)
+	{
+		ResetPlayerMeshPosition();
+	}
+}
 
 void AParkourCombatCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent)
 {

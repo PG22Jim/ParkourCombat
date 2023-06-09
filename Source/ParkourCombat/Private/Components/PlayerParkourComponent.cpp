@@ -48,6 +48,8 @@ void UPlayerParkourComponent::TryGetOwnerReference()
 	if(!PlayerChaMovement) return;
 
 	PlayerChaMoveCompRef = PlayerChaMovement;
+	
+	PlayerOwnerRef->SetWallClimbMontage(WallClimbToSprint);
 
 	InitializeDelegate();
 	
@@ -67,6 +69,11 @@ void UPlayerParkourComponent::ParkourTickStart()
 	World->GetTimerManager().SetTimer(ParkourTickTimerHandle, this, &UPlayerParkourComponent::ParkourTickCheck, ParkourTick, true, -1);
 }
 
+bool UPlayerParkourComponent::IsPlayerDoingParkourAction()
+{
+	return CurrentParkourStatus == ParkourStatus::SlideThrough || CurrentParkourStatus == ParkourStatus::QuickWallClimb || CurrentParkourStatus == ParkourStatus::VaultThroughSmallWall;
+}
+
 // Called every frame
 void UPlayerParkourComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
@@ -81,26 +88,24 @@ void UPlayerParkourComponent::TickComponent(float DeltaTime, ELevelTick TickType
 
 void UPlayerParkourComponent::ParkourTickCheck()
 {
-	const bool PlayerRunning = IsRunning();
-	
-	if(!PlayerRunning)
+	// if player is not running and player is not performing parkour action, enter Idle state
+	if(!IsRunning() && !IsPlayerDoingParkourAction())
 	{
 		EnterIdleState();
-		return;
 	}
 
+	// if player is in idle state but has velocity, enter running state
 	if(CurrentParkourStatus == ParkourStatus::Idle)
 	{
 		EnterRunningState();
 		return;
 	}
 
+	// if player is in running state, run logic in running state
 	if(CurrentParkourStatus == ParkourStatus::Running)
 	{
 		InRunningState();
 	}
-
-	
 }
 
 // ============================================= Running =============================================
@@ -117,12 +122,12 @@ void UPlayerParkourComponent::InRunningState()
 		TryToGetPositionsToVault();
 		BeginVaulting();
 	}
-	//
-	// if(SlidingCheck())
-	// 	BeginSlide();
+	
+	if(SlidingCheck())
+		BeginSlide();
 
-	// if(WallClimbCheck())
-	// 	BeginWallClimb();
+	if(WallClimbCheck())
+		BeginWallClimb();
 		
 		
 	
@@ -252,7 +257,7 @@ bool UPlayerParkourComponent::SlidingCheck()
 	// SECOND CHECK: no object blocking player's slide
 	const float OffsetToBlockCheck = PlayerCapsuleHalfHeight - 30;
 	const FVector CheckBlockingStart = FVector(CurrentPlayerPos.X, CurrentPlayerPos.Y, (CurrentPlayerPos.Z - OffsetToBlockCheck));
-	const FVector CheckBlockingEnd = CheckBlockingStart + (CurrentForwardDir * 550.0f);
+	const FVector CheckBlockingEnd = CheckBlockingStart + (CurrentForwardDir * 600.0f);
 
 	// Sphere trace by channel from Kismet System Library
 	const bool bIsBlocked = UKismetSystemLibrary::SphereTraceSingle(this, CheckBlockingStart, CheckBlockingEnd, 25.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
@@ -264,8 +269,14 @@ bool UPlayerParkourComponent::SlidingCheck()
 	const FVector GetUpEndPos = FVector(CheckBlockingEnd.X, CheckBlockingEnd.Y, (CheckBlockingEnd.Z + OffsetToGetUp));
 	const bool bUnableToGetUp = UKismetSystemLibrary::SphereTraceSingle(this, CheckBlockingEnd, GetUpEndPos, 25.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
 	if(bUnableToGetUp) return false;
-	
-	
+
+
+	// All of them are true, which means player can perform slide, store slide destinations for later usage
+	FRotator CurrentRotation = PlayerOwnerRef->GetActorRotation();
+	const FTransform FirstDestTrans = UKismetMathLibrary::MakeTransform(CheckBlockingStart, CurrentRotation);
+	const FTransform SecondDestTrans = UKismetMathLibrary::MakeTransform(CheckBlockingEnd, CurrentRotation);
+
+	PlayerOwnerRef->UpdateMotionWarpingDestination_Sliding(FirstDestTrans, SecondDestTrans);
 	return true;
 }
 
@@ -340,6 +351,30 @@ bool UPlayerParkourComponent::WallClimbCheck()
 	const bool bIsValidLanding = UKismetSystemLibrary::SphereTraceSingle(this, HasSpaceToLandEnd, IsValidLandingEnd, 25.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
 	if(!bIsValidLanding) return false;
 
+
+
+	// All conditions valid, start store parkour moving positions
+	const FRotator CurrentPlayerRotation = PlayerOwnerRef->GetActorRotation();
+	const FTransform FirstDestTrans = UKismetMathLibrary::MakeTransform(InRangeHitPos, CurrentPlayerRotation);
+
+	const FVector ExpectPosToTouchWallStart = UKismetMathLibrary::VLerp(HasSpaceToClimbStart, HasSpaceToClimbEnd, 0.4);
+	const FVector ExpectPosToTouchWallEnd = ExpectPosToTouchWallStart + (CurrentForwardDir * 100.0f);
+	
+	FVector PosToTouchWall = ExpectPosToTouchWallEnd;
+	if(	UKismetSystemLibrary::SphereTraceSingle(this, ExpectPosToTouchWallStart, ExpectPosToTouchWallEnd, 25.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true))
+		PosToTouchWall = Hit.Location;
+
+	const FTransform SecondDestTrans = UKismetMathLibrary::MakeTransform(PosToTouchWall, CurrentPlayerRotation);
+
+
+	const FVector PlaceToGrabEdge = UKismetMathLibrary::VLerp(HasSpaceToClimbStart, HasSpaceToClimbEnd, 0.7);
+	const FTransform ThirdDestTrans = UKismetMathLibrary::MakeTransform(PlaceToGrabEdge, CurrentPlayerRotation);
+
+	const FVector PlaceToBeginRun = FVector(HasSpaceToLandEnd.X, HasSpaceToLandEnd.Y, PlaceToGrabEdge.Z);
+	const FTransform FourthDestTrans = UKismetMathLibrary::MakeTransform(PlaceToBeginRun, CurrentPlayerRotation);
+
+	PlayerOwnerRef->UpdateMotionWarpingDestination_Climbing(FirstDestTrans, SecondDestTrans, ThirdDestTrans,FourthDestTrans);
+	
 	return true;
 }
 
@@ -352,6 +387,8 @@ void UPlayerParkourComponent::BeginWallClimb()
 
 	BeginParkourAction();
 
+	PlayerOwnerRef->UpdateJumpClimbStartZ();
+	
 	PlayerOwnerRef->PlayAnimMontage(CurrentMontage,1.2,"Default");
 }
 
@@ -363,11 +400,9 @@ void UPlayerParkourComponent::EnterWallClimbState()
 // ============================================= Utility =============================================
 bool UPlayerParkourComponent::IsRunning()
 {
-	if(!PlayerOwnerRef) return false;
+	if(!PlayerChaMoveCompRef) return false;
 
-	UCharacterMovementComponent* PlayerChaMovement = PlayerOwnerRef->GetCharacterMovement();
-
-	const FVector LastVelocity = PlayerChaMovement->GetLastUpdateVelocity();
+	const FVector LastVelocity = PlayerChaMoveCompRef->GetLastUpdateVelocity();
 	const float VelocityLength = LastVelocity.Size2D();
 
 	return VelocityLength > 0;
@@ -429,7 +464,7 @@ void UPlayerParkourComponent::TryToGetPositionsToVault()
 	const FVector InRangeEndPos = PlayerCurrentPos + (CurrentForwardDir * 200.0f);
 
 	// Sphere trace by channel from Kismet System Library
-	const bool bIsInRange = UKismetSystemLibrary::SphereTraceSingle(this, PlayerCurrentPos, InRangeEndPos, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::Persistent, Hit, true);
+	const bool bIsInRange = UKismetSystemLibrary::SphereTraceSingle(this, PlayerCurrentPos, InRangeEndPos, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
 
 	if(bIsInRange)
 	{
@@ -450,7 +485,7 @@ void UPlayerParkourComponent::TryToGetPositionsToVault()
 		
 		
 		// Sphere trace by channel from Kismet System Library
-		const bool bPlaceHandPos = UKismetSystemLibrary::SphereTraceSingle(this, PlaceHandPosStart, PlaceHandPosEnd, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::Persistent, Hit, true);
+		const bool bPlaceHandPos = UKismetSystemLibrary::SphereTraceSingle(this, PlaceHandPosStart, PlaceHandPosEnd, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
 		if(bPlaceHandPos)
 		{
 			const FVector SecondDestination = Hit.Location;
@@ -462,7 +497,7 @@ void UPlayerParkourComponent::TryToGetPositionsToVault()
 			
 
 		
-			const bool bPlaceToLandHorizontal = UKismetSystemLibrary::SphereTraceSingle(this, PlaceToLandStart, FirstDestination, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::Persistent, Hit, true);
+			const bool bPlaceToLandHorizontal = UKismetSystemLibrary::SphereTraceSingle(this, PlaceToLandStart, FirstDestination, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
 			if(bPlaceToLandHorizontal)
 			{
 				FVector FourthDestination = Hit.Location + (CurrentForwardDir * GapBetweenLandPosAndWall);
@@ -476,7 +511,7 @@ void UPlayerParkourComponent::TryToGetPositionsToVault()
 				FirstDestination.Z = PlayerCurrentPos.Z;
 
 
-				if(UKismetSystemLibrary::SphereTraceSingle(this, FourthDestination, FourthDestination - (PlayerOwnerRef->GetActorUpVector() * 200), 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::Persistent, Hit, true))
+				if(UKismetSystemLibrary::SphereTraceSingle(this, FourthDestination, FourthDestination - (PlayerOwnerRef->GetActorUpVector() * 200), 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true))
 					FourthDestination.Z = Hit.Location.Z;
 				else FourthDestination.Z = PlayerCurrentPos.Z - (PlayerOwnerRef->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() / 2);
 				
@@ -488,18 +523,18 @@ void UPlayerParkourComponent::TryToGetPositionsToVault()
 
 				PlayerOwnerRef->UpdateMotionWarpingDestination_Vaulting(FirstTransform, SecondTransform, ThirdTransform, FinalTransform);
 
-				{
-					TArray<FVector> FoundDestinations;
-					FoundDestinations.Add(FirstDestination);
-					FoundDestinations.Add(SecondDestination);
-					FoundDestinations.Add(ThirdDestination);
-					FoundDestinations.Add(FourthDestination);
-				
-					for (FVector EachVector : FoundDestinations)
-					{
-						TestFunction(EachVector);
-					}
-				}
+				// {
+				// 	TArray<FVector> FoundDestinations;
+				// 	FoundDestinations.Add(FirstDestination);
+				// 	FoundDestinations.Add(SecondDestination);
+				// 	FoundDestinations.Add(ThirdDestination);
+				// 	FoundDestinations.Add(FourthDestination);
+				//
+				// 	for (FVector EachVector : FoundDestinations)
+				// 	{
+				// 		TestFunction(EachVector);
+				// 	}
+				// }
 
 				//StoreFoundDestinations(FoundDestinations);
 			}
