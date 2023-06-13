@@ -95,12 +95,14 @@ void AParkourCombatCharacter::BeginPlay()
 	}
 
 
-	const UWorld* World = GetWorld();
-	if(!World) return;
-
-	FTimerManager& WorldTimerManager = World->GetTimerManager();
-
-	WorldTimerManager.SetTimer(RecordPositionTimerHandle,this, &AParkourCombatCharacter::RecordCurrentPositionToList, 0.015, true, -1);
+	// const UWorld* World = GetWorld();
+	// if(!World) return;
+	//
+	// FTimerManager& WorldTimerManager = World->GetTimerManager();
+	//
+	// WorldTimerManager.SetTimer(RecordPositionTimerHandle,this, &AParkourCombatCharacter::RecordCurrentPositionToList, 0.015, true, -1);
+	//
+	//
 }
 
 void AParkourCombatCharacter::LinkListTest_AddRandomData()
@@ -145,27 +147,16 @@ void AParkourCombatCharacter::LinkListTest_ClearAll()
 
 void AParkourCombatCharacter::LinkListTest_DrawPosSphere()
 {
-	const UWorld* World = GetWorld();
-	if(!World) return;
-
-	FTimerManager& WorldTimerManager = World->GetTimerManager();
-
-	WorldTimerManager.PauseTimer(RecordPositionTimerHandle);
-	WorldTimerManager.SetTimer(BackTrackingTimerHandle,this, &AParkourCombatCharacter::BackTrackTransform, 0.015, true, -1);
-	WorldTimerManager.SetTimer(StopBackTrackTimerHandle,this, &AParkourCombatCharacter::StopBackTracking, 10.0f, false, -1);
+	bool isBound = OnStartRewindDelegate.ExecuteIfBound();
 	
-	// if(CurrenBackTrackData->GetSizeNum() > 0)
-	// {
-	// 	ParkourPositionData* IterationData = CurrenBackTrackData->Peek();
+	// const UWorld* World = GetWorld();
+	// if(!World) return;
 	//
-	// 	while (IterationData)
-	// 	{
-	// 		DrawTransSphere(IterationData->TransformData);
-	// 		IterationData = IterationData->NextTransform;
-	// 	}
-	// }
-
-	
+	// FTimerManager& WorldTimerManager = World->GetTimerManager();
+	//
+	// WorldTimerManager.PauseTimer(RecordPositionTimerHandle);
+	// WorldTimerManager.SetTimer(BackTrackingTimerHandle,this, &AParkourCombatCharacter::BackTrackTransform, 0.015, true, -1);
+	// WorldTimerManager.SetTimer(StopBackTrackTimerHandle,this, &AParkourCombatCharacter::StopBackTracking, 10.0f, false, -1);
 }
 
 void AParkourCombatCharacter::RecordCurrentPositionToList()
@@ -179,6 +170,7 @@ void AParkourCombatCharacter::BackTrackTransform()
 	ParkourPositionData* CurrentTopData = CurrenBackTrackData->Peek();
 	if(!CurrentTopData) return;
 
+	// 
 	SetActorTransform(CurrentTopData->TransformData);
 	CurrenBackTrackData->Pop();
 	

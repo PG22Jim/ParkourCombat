@@ -13,6 +13,7 @@
 
 DECLARE_DYNAMIC_DELEGATE(FOnExecuteFinishParkourAction);
 DECLARE_DYNAMIC_DELEGATE(FOnUpdateParkourDestination);
+DECLARE_DYNAMIC_DELEGATE(FOnStartRewind);
 
 
 UCLASS(config=Game)
@@ -71,6 +72,7 @@ public:
 
 	FOnExecuteFinishParkourAction OnExecuteFinishParkourAction;
 	FOnUpdateParkourDestination OnUpdateParkourDestination;
+	FOnStartRewind OnStartRewindDelegate;
 
 	ParkourMovementLinkedList* StoredDestinationList = new ParkourMovementLinkedList();
 	BackTrackData_Stack* CurrenBackTrackData = new BackTrackData_Stack();
