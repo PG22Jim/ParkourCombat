@@ -14,4 +14,30 @@ enum class ParkourStatus: uint8
 	
 	//Count UMETA(Hidden)
 };
+
+UENUM(BlueprintType)
+enum class CombatStatus: uint8
+{
+	Idle = 0 UMETA(DisplayName = "Idle"),
+	NormalAttack = 1 UMETA(DisplayName = "NormalAttack"),
+	PreAttacking = 2 UMETA(DisplayName = "PreAttacking"),
+	Recovering = 3 UMETA(DisplayName = "Recovering"),
+	BeforeRecovering = 4 UMETA(DisplayName = "Recovering"),
+	Parry = 5 UMETA(DisplayName = "Parry"),
+};
+
+
+UENUM(BlueprintType)
+enum class ParryStatus: uint8
+{
+	Idle = 0 UMETA(DisplayName = "Idle"),
+	BeginParry = 1 UMETA(DisplayName = "BeginParry"),
+	Parrying = 2 UMETA(DisplayName = "Parrying"),
+	CancelParry = 3 UMETA(DisplayName = "CancelParry"),
+};
+
+
+
+
+
 //ENUM_RANGE_BY_COUNT(ParkourStatus, ParkourStatus::Count);

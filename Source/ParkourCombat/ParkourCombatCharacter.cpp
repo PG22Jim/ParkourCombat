@@ -27,6 +27,11 @@ void AParkourCombatCharacter::ResetPlayerMeshPosition()
 	}
 }
 
+void AParkourCombatCharacter::ClearRecordFunction(const FInputActionValue& Value)
+{
+	MovementInputVector = FVector(0,0,0);
+}
+
 AParkourCombatCharacter::AParkourCombatCharacter()
 {
 	// Set size for collision capsule
@@ -63,6 +68,29 @@ AParkourCombatCharacter::AParkourCombatCharacter()
 
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
+}
+
+void AParkourCombatCharacter::TryJump()
+{
+	OnJumpExecuteDelegate.ExecuteIfBound();
+}
+
+void AParkourCombatCharacter::TryNormalAttack()
+{
+	OnExecuteCombatAction.ExecuteIfBound(CombatStatus::NormalAttack);
+}
+
+void AParkourCombatCharacter::TryParry()
+{
+	//GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("Try Parry!"));	
+	OnExecuteCombatAction.ExecuteIfBound(CombatStatus::Parry);
+}
+
+void AParkourCombatCharacter::TryCancelParry()
+{
+	//GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("Try Cancel Parry!"));	
+
+	if(CurrentParryStatus != ParryStatus::Idle || CurrentParryStatus != ParryStatus::CancelParry) OnCancelParry.ExecuteIfBound();
 }
 
 void AParkourCombatCharacter::BeginPlay()
@@ -113,7 +141,7 @@ void AParkourCombatCharacter::LinkListTest_AddRandomData()
 	const FVector RandomVector = FVector(RandomX, RandomY, RandomZ);
 	const FTransform RandomTransData = FTransform(RandomVector);
 	
-	CurrenBackTrackData->Push(RandomTransData);
+	//CurrenBackTrackData->Push(RandomTransData);
 }
 
 void AParkourCombatCharacter::LinkListTest_PrintAll()
@@ -162,7 +190,7 @@ void AParkourCombatCharacter::LinkListTest_DrawPosSphere()
 void AParkourCombatCharacter::RecordCurrentPositionToList()
 {
 	const FTransform CurrentTrans = GetActorTransform();
-	CurrenBackTrackData->Push(CurrentTrans);
+	//CurrenBackTrackData->Push(CurrentTrans);
 }
 
 void AParkourCombatCharacter::BackTrackTransform()
@@ -186,6 +214,12 @@ void AParkourCombatCharacter::StopBackTracking()
 	WorldTimerManager.UnPauseTimer(RecordPositionTimerHandle);
 	WorldTimerManager.ClearTimer(BackTrackingTimerHandle);
 	
+}
+
+UAnimMontage* AParkourCombatCharacter::GetCurrentAnimMontage() const
+{
+	// TODO: Add method to decide which montage should be playing
+	return nullptr;
 }
 
 void AParkourCombatCharacter::UpdateJumpClimbStartZ()
@@ -235,6 +269,32 @@ void AParkourCombatCharacter::OnUpdateMeshPosition_Implementation()
 	PlayerMeshComp->SetWorldLocation(CorrectWorldPos);
 }
 
+void AParkourCombatCharacter::OnFinishNormalAttack_Implementation()
+{
+	IPlayerCombatActionInterface::OnFinishNormalAttack_Implementation();
+
+	OnFinishCombatAction.ExecuteIfBound(CombatStatus::NormalAttack);
+}
+
+void AParkourCombatCharacter::OnEnterSpecificState_Implementation(CombatStatus State)
+{
+	IPlayerCombatActionInterface::OnEnterSpecificState_Implementation(State);
+
+	CurrentCombatStatus = State;
+
+	if(CurrentCombatStatus == CombatStatus::BeforeRecovering)
+	{
+		OnBufferCheck.ExecuteIfBound();
+	}
+}
+
+void AParkourCombatCharacter::OnEnterSpecificParryState_Implementation(ParryStatus State)
+{
+	IPlayerCombatActionInterface::OnEnterSpecificParryState_Implementation(State);
+
+	SetCurrentParryStatus(State);
+}
+
 //////////////////////////////////////////////////////////////////////////
 // Input
 
@@ -249,15 +309,24 @@ void AParkourCombatCharacter::OnResumeMeshZPosition(UAnimMontage* Montage, bool 
 
 void AParkourCombatCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent)
 {
+	
 	// Set up action bindings
 	if (UEnhancedInputComponent* EnhancedInputComponent = CastChecked<UEnhancedInputComponent>(PlayerInputComponent)) {
 		
 		//Jumping
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &ACharacter::Jump);
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryJump);
 
+		// NormalAttack
+		EnhancedInputComponent->BindAction(NormalAttackAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryNormalAttack);
+
+		// Parry
+		EnhancedInputComponent->BindAction(ParryAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryParry);
+		EnhancedInputComponent->BindAction(CancelParryAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryCancelParry);
+		
+		
 		//Moving
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::Move);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::None, this, &AParkourCombatCharacter::ClearRecordFunction);
 
 		//Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::Look);
@@ -270,7 +339,8 @@ void AParkourCombatCharacter::Move(const FInputActionValue& Value)
 {
 	// input is a Vector2D
 	FVector2D MovementVector = Value.Get<FVector2D>();
-
+	MovementInputVector = FVector(MovementVector.X, MovementVector.Y, 0);
+	
 	if (Controller != nullptr)
 	{
 		// find out which way is forward
@@ -282,7 +352,15 @@ void AParkourCombatCharacter::Move(const FInputActionValue& Value)
 	
 		// get right vector 
 		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-
+		
+		// const FVector SelfPos = GetActorLocation();
+		// const FVector RightX = UKismetMathLibrary::GetRightVector(YawRotation);
+		// const FVector ForwardY = UKismetMathLibrary::GetForwardVector(YawRotation);
+		// const FVector RightInputDir = RightX * MovementVector.X;
+		// const FVector ForwardInputDir = ForwardY * MovementVector.Y;
+		// const FVector InputDest = SelfPos + ((RightInputDir * 50) + (ForwardInputDir * 50));
+		// MovementInputDirection = UKismetMathLibrary::GetDirectionUnitVector(SelfPos, InputDest);
+		
 		// add movement 
 		AddMovementInput(ForwardDirection, MovementVector.Y);
 		AddMovementInput(RightDirection, MovementVector.X);

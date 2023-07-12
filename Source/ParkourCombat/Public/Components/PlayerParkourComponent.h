@@ -3,45 +3,48 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BasePlayerComponent.h"
 #include "PlayerEnums.h"
-#include "Components/ActorComponent.h"
-#include "ParkourCombat/ParkourCombatCharacter.h"
 #include "PlayerParkourComponent.generated.h"
 
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent), Blueprintable )
-class PARKOURCOMBAT_API UPlayerParkourComponent : public UActorComponent
+class PARKOURCOMBAT_API UPlayerParkourComponent : public UBasePlayerComponent
 {
 	GENERATED_BODY()
 
 private:
 	float ParkourTick = 0.02f;
 
-	void InitializeDelegate();
 	void ParkourTickStart();
 
 	bool IsPlayerDoingParkourAction();
 
 protected:
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	AParkourCombatCharacter* PlayerOwnerRef;
 
-	UCapsuleComponent* PlayerCapsuleCompRef;
-	UCharacterMovementComponent* PlayerChaMoveCompRef;
 
 	
 	
 	// Called when the game starts
 	virtual void BeginPlay() override;
 
-	void TryGetOwnerReference();
+	virtual void InitializeDelegate() override;
+	virtual void TryGetOwnerReference() override;
 
 	UAnimMontage* CurrentMontage;
 
 	FTransform CurrentParkourDestination;
 	
+	UPROPERTY(EditAnywhere,BlueprintReadWrite, Category= Target_Setting)
+	TArray<TEnumAsByte<EObjectTypeQuery>> FilterType;
 
+	UPROPERTY(EditAnywhere,BlueprintReadWrite, Category= Target_Setting)
+	UClass* FilteringClass;
+
+	UPROPERTY(EditAnywhere,BlueprintReadWrite, Category= Target_Setting)
+	float DetectingRadius = 500.0f;
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= Parkour_Vaulting)
 	float MaxVaultDistance = 300.0f;
 	
@@ -61,10 +64,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= Parkour_Animations)
 	UAnimMontage* WallClimbToSprint;
 	
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)	
-	ParkourStatus CurrentParkourStatus = ParkourStatus::Idle;
-
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category= Parkour_Animations)
+	UAnimMontage* JumpFromWall;
+	
 	FTimerHandle ParkourTickTimerHandle;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
@@ -115,20 +117,30 @@ protected:
 	void BeginWallClimb();
 
 	void EnterWallClimbState();
+
+	bool IsWallClimbing();
+
+	
+	// =================================================== Jump Execution ===========================================
+
+	UFUNCTION()
+	void OnJumpExecution();
 	
 	
 	
 	// ============================================= Utility =============================================
 
 	bool IsRunning();
+
+	bool IsExecutingCombat();
 	
-	void SetNewParkourState(ParkourStatus NewStatus) {if(CurrentParkourStatus != NewStatus) CurrentParkourStatus = NewStatus;}
+	void SetNewParkourState(ParkourStatus NewStatus) {if(PlayerOwnerRef->GetCurrentParkourStatus() != NewStatus) PlayerOwnerRef->SetCurrentParkourStatus(NewStatus);}
 
 	void BeginParkourAction();
 
 	UFUNCTION()
 	void FinishParkourAction();
-
+	
 	void ClearParkourList();
 
 	void StoreFoundDestinations(TArray<FVector> FoundDestArray);
@@ -141,8 +153,11 @@ protected:
 	
 
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
-	void TestFunction(FVector Destination);
-	
+	void TestFunction(FVector Destination, float Radius);
+
+
+	UFUNCTION(BlueprintCallable)
+	void EarlyFinishParkourAction();
 	
 public:
 	

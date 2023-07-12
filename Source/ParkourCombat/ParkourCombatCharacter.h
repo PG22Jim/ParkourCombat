@@ -8,16 +8,25 @@
 #include "ParkourMovementLinkedList.h"
 #include "Components/TimelineComponent.h"
 #include "Player/ParkourInterface.h"
+#include "Player/PlayerCombatActionInterface.h"
 #include "ParkourCombatCharacter.generated.h"
 
 
 DECLARE_DYNAMIC_DELEGATE(FOnExecuteFinishParkourAction);
 DECLARE_DYNAMIC_DELEGATE(FOnUpdateParkourDestination);
 DECLARE_DYNAMIC_DELEGATE(FOnStartRewind);
+DECLARE_DYNAMIC_DELEGATE(FRegisterParkourComponent);
+DECLARE_DYNAMIC_DELEGATE(FJumpExecution);
+DECLARE_DYNAMIC_DELEGATE_OneParam(FOnExecuteCombatAction, CombatStatus, CombatCommand);
+DECLARE_DYNAMIC_DELEGATE_OneParam(FOnFinishCombatAction, CombatStatus, CombatCommand);
+DECLARE_DYNAMIC_DELEGATE(FOnCancelParry);
+DECLARE_DYNAMIC_DELEGATE(FOnBufferCheck);
+
+
 
 
 UCLASS(config=Game)
-class AParkourCombatCharacter : public ACharacter, public IParkourInterface
+class AParkourCombatCharacter : public ACharacter, public IParkourInterface, public IPlayerCombatActionInterface
 {
 private:
 
@@ -28,6 +37,7 @@ private:
 
 	UAnimMontage* WallClimbMontage = nullptr;
 
+	class UPlayerParkourComponent* OwningParkourComponent;
 
 	FTimerHandle RecordPositionTimerHandle;
 	FTimerHandle BackTrackingTimerHandle;
@@ -39,6 +49,9 @@ private:
 protected:
 
 
+	UFUNCTION()
+	void ClearRecordFunction(const FInputActionValue& Value);
+	
 	
 	GENERATED_BODY()
 
@@ -58,6 +71,17 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* JumpAction;
 
+	/** Attack Input Actions */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* NormalAttackAction;
+
+	/** Parry Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* ParryAction;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* CancelParryAction;
+	
 	/** Move Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* MoveAction;
@@ -65,14 +89,29 @@ protected:
 	/** Look Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* LookAction;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FVector MovementInputVector;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)	
+	ParkourStatus CurrentParkourStatus = ParkourStatus::Idle;
 
-
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)	
+	CombatStatus CurrentCombatStatus = CombatStatus::Idle;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)	
+	ParryStatus CurrentParryStatus = ParryStatus::Idle;
 	
 public:
 
 	FOnExecuteFinishParkourAction OnExecuteFinishParkourAction;
 	FOnUpdateParkourDestination OnUpdateParkourDestination;
 	FOnStartRewind OnStartRewindDelegate;
+	FJumpExecution OnJumpExecuteDelegate;
+	FOnExecuteCombatAction OnExecuteCombatAction;
+	FOnFinishCombatAction OnFinishCombatAction;
+	FOnCancelParry OnCancelParry;
+	FOnBufferCheck OnBufferCheck;
 
 	ParkourMovementLinkedList* StoredDestinationList = new ParkourMovementLinkedList();
 	BackTrackData_Stack* CurrenBackTrackData = new BackTrackData_Stack();
@@ -82,6 +121,20 @@ public:
 
 protected:
 
+	/** Called for movement input */
+	UFUNCTION()
+	void TryJump();
+
+	/** Called for movement input */
+	UFUNCTION()
+	void TryNormalAttack();
+	
+	UFUNCTION()
+	void TryParry();
+
+	UFUNCTION()
+	void TryCancelParry();
+	
 	/** Called for movement input */
 	void Move(const FInputActionValue& Value);
 
@@ -137,6 +190,24 @@ public:
 
 
 
+	// ================================================== Get And Set ============================================================
+	ParkourStatus GetCurrentParkourStatus() const {return CurrentParkourStatus;}
+	void SetCurrentParkourStatus(ParkourStatus NewStatus) { CurrentParkourStatus = NewStatus;}
+	bool InRequestParkourState(ParkourStatus RequestStatus) const {return CurrentParkourStatus == RequestStatus;}
+
+	FVector GetMovementInputVector() const {return MovementInputVector;}
+	
+	
+	CombatStatus GetCurrentCombatStatus() const {return CurrentCombatStatus;}
+	void SetCurrentCombatStatus(CombatStatus NewStatus) { CurrentCombatStatus = NewStatus;}
+
+	UFUNCTION(BlueprintCallable, BlueprintPure)
+	ParryStatus GetCurrentParryStatus() const {return CurrentParryStatus;}
+
+	void SetCurrentParryStatus(ParryStatus NewStatus) { CurrentParryStatus = NewStatus;}
+	
+	UAnimMontage* GetCurrentAnimMontage() const;
+	
 	UAnimMontage* GetWallClimbMontage() const {return WallClimbMontage;}
 	void SetWallClimbMontage(UAnimMontage* NewMontage) {WallClimbMontage = NewMontage;}
 
@@ -153,6 +224,12 @@ public:
 	
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
 	void UpdateMotionWarpingDestination_Climbing(FTransform FirstDest, FTransform SecondDest, FTransform ThirdDest, FTransform FinalDest);
+
+	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
+	void UpdateMotionWarpingDestination_NormalAttack(FTransform TransformToTarget);
+
+	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
+	void ClearMotionWarpingDestination_NormalAttack();
 	
 	
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
@@ -171,9 +248,9 @@ public:
 	virtual void OnUpdateDestination_Implementation() override;
 	virtual void OnParkourActionEnd_Implementation() override;
 	virtual void OnUpdateMeshPosition_Implementation() override;
-
-	
-
+	virtual void OnFinishNormalAttack_Implementation() override;
+	virtual void OnEnterSpecificState_Implementation(CombatStatus State) override;
+	virtual void OnEnterSpecificParryState_Implementation(ParryStatus State) override;
 	
 };
 

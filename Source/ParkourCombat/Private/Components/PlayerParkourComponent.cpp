@@ -9,6 +9,15 @@
 #include "Kismet/KismetSystemLibrary.h"
 
 
+void UPlayerParkourComponent::EarlyFinishParkourAction()
+{
+	GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("Finish Parkour Action!"));
+	
+	FinishParkourAction();
+
+	PlayerOwnerRef->StopAnimMontage(CurrentMontage);
+}
+
 // Sets default values for this component's properties
 UPlayerParkourComponent::UPlayerParkourComponent()
 {
@@ -25,40 +34,28 @@ void UPlayerParkourComponent::BeginPlay()
 	Super::BeginPlay();
 
 	TryGetOwnerReference();
+	TryGetCapsuleComponent();
+	TryGetCharacterMovementComponent();
+	
+	InitializeDelegate();
 
 	ParkourTickStart();
 }
 
-void UPlayerParkourComponent::TryGetOwnerReference()
-{
-	AActor* OwnerActor = GetOwner();
-	if(OwnerActor == nullptr) return;
-	
-	AParkourCombatCharacter* CastedOwnerActor = Cast<AParkourCombatCharacter>(OwnerActor);
-	if(CastedOwnerActor == nullptr) return;
-
-	PlayerOwnerRef = CastedOwnerActor;
-
-	UCapsuleComponent* PlayerCapsule = PlayerOwnerRef->GetCapsuleComponent();
-	if(!PlayerCapsule) return;
-
-	PlayerCapsuleCompRef = PlayerCapsule;
-	
-	UCharacterMovementComponent* PlayerChaMovement = PlayerOwnerRef->GetCharacterMovement();
-	if(!PlayerChaMovement) return;
-
-	PlayerChaMoveCompRef = PlayerChaMovement;
-	
-	PlayerOwnerRef->SetWallClimbMontage(WallClimbToSprint);
-
-	InitializeDelegate();
-	
-}
-
 void UPlayerParkourComponent::InitializeDelegate()
 {
-	PlayerOwnerRef->OnExecuteFinishParkourAction.BindDynamic(this, &UPlayerParkourComponent::FinishParkourAction);
+	Super::InitializeDelegate();
+
+	if(!PlayerOwnerRef) TryGetOwnerReference();
 	
+	PlayerOwnerRef->OnExecuteFinishParkourAction.BindDynamic(this, &UPlayerParkourComponent::FinishParkourAction);
+	PlayerOwnerRef->OnJumpExecuteDelegate.BindDynamic(this, &UPlayerParkourComponent::OnJumpExecution);
+}
+
+
+void UPlayerParkourComponent::TryGetOwnerReference()
+{
+	Super::TryGetOwnerReference();
 }
 
 void UPlayerParkourComponent::ParkourTickStart()
@@ -71,6 +68,9 @@ void UPlayerParkourComponent::ParkourTickStart()
 
 bool UPlayerParkourComponent::IsPlayerDoingParkourAction()
 {
+	if(!PlayerOwnerRef) return false;
+
+	const ParkourStatus CurrentParkourStatus = PlayerOwnerRef->GetCurrentParkourStatus();
 	return CurrentParkourStatus == ParkourStatus::SlideThrough || CurrentParkourStatus == ParkourStatus::QuickWallClimb || CurrentParkourStatus == ParkourStatus::VaultThroughSmallWall;
 }
 
@@ -94,6 +94,13 @@ void UPlayerParkourComponent::ParkourTickCheck()
 		EnterIdleState();
 	}
 
+	if(!PlayerOwnerRef) return;
+
+	if(IsExecutingCombat()) return;
+	
+	const ParkourStatus CurrentParkourStatus = PlayerOwnerRef->GetCurrentParkourStatus();
+
+	
 	// if player is in idle state but has velocity, enter running state
 	if(CurrentParkourStatus == ParkourStatus::Idle)
 	{
@@ -397,6 +404,47 @@ void UPlayerParkourComponent::EnterWallClimbState()
 	SetNewParkourState(ParkourStatus::QuickWallClimb);
 }
 
+bool UPlayerParkourComponent::IsWallClimbing()
+{
+	return (PlayerOwnerRef->InRequestParkourState(ParkourStatus::QuickWallClimb) && CurrentMontage == WallClimbToSprint);
+}
+
+
+// ============================================= Jump Execution =============================================
+
+void UPlayerParkourComponent::OnJumpExecution()
+{
+	if(!IsWallClimbing()) return;
+
+	// PlayerOwnerRef->StopAnimMontage(CurrentMontage);
+	// //EarlyFinishParkourAction();
+	//
+	// // TODO: Check if enemy in range
+	// if(UWorld* World = GetWorld())
+	// {
+	// 	TArray<AActor*> FoundActorList;
+	// 	TArray<AActor*> IgnoreActors;
+	// 	IgnoreActors.Add(PlayerOwnerRef);
+	// 	UKismetSystemLibrary::SphereOverlapActors(World, PlayerOwnerRef->GetActorLocation(), DetectingRadius, FilterType, FilteringClass, IgnoreActors, FoundActorList);
+	// 	TestFunction(PlayerOwnerRef->GetActorLocation(), DetectingRadius);
+	// 	
+	// 	// TODO: Jump to closest enemy
+	//
+	// 	
+	//
+	//
+	// 	// TODO: Perform small wall jump
+	// 	CurrentMontage = JumpFromWall;
+	// 	if(!CurrentMontage) return;
+	//
+	// 	PlayerOwnerRef->PlayAnimMontage(CurrentMontage);
+	// 	
+	// }
+	
+	
+	
+}
+
 // ============================================= Utility =============================================
 bool UPlayerParkourComponent::IsRunning()
 {
@@ -407,6 +455,13 @@ bool UPlayerParkourComponent::IsRunning()
 
 	return VelocityLength > 0;
 	
+}
+
+bool UPlayerParkourComponent::IsExecutingCombat()
+{
+	const CombatStatus Status = PlayerOwnerRef->GetCurrentCombatStatus();
+	
+	return (Status != CombatStatus::Idle);
 }
 
 void UPlayerParkourComponent::BeginParkourAction()
@@ -510,7 +565,6 @@ void UPlayerParkourComponent::TryToGetPositionsToVault()
 
 				FirstDestination.Z = PlayerCurrentPos.Z;
 
-
 				if(UKismetSystemLibrary::SphereTraceSingle(this, FourthDestination, FourthDestination - (PlayerOwnerRef->GetActorUpVector() * 200), 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true))
 					FourthDestination.Z = Hit.Location.Z;
 				else FourthDestination.Z = PlayerCurrentPos.Z - (PlayerOwnerRef->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight() / 2);
@@ -522,21 +576,6 @@ void UPlayerParkourComponent::TryToGetPositionsToVault()
 				FTransform FinalTransform = UKismetMathLibrary::MakeTransform(FourthDestination, CurrentPlayerRotation);
 
 				PlayerOwnerRef->UpdateMotionWarpingDestination_Vaulting(FirstTransform, SecondTransform, ThirdTransform, FinalTransform);
-
-				// {
-				// 	TArray<FVector> FoundDestinations;
-				// 	FoundDestinations.Add(FirstDestination);
-				// 	FoundDestinations.Add(SecondDestination);
-				// 	FoundDestinations.Add(ThirdDestination);
-				// 	FoundDestinations.Add(FourthDestination);
-				//
-				// 	for (FVector EachVector : FoundDestinations)
-				// 	{
-				// 		TestFunction(EachVector);
-				// 	}
-				// }
-
-				//StoreFoundDestinations(FoundDestinations);
 			}
 		}
 	}
