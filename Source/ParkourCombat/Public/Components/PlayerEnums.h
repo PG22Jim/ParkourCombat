@@ -22,19 +22,24 @@ enum class CombatStatus: uint8
 	NormalAttack = 1 UMETA(DisplayName = "NormalAttack"),
 	PreAttacking = 2 UMETA(DisplayName = "PreAttacking"),
 	Recovering = 3 UMETA(DisplayName = "Recovering"),
-	BeforeRecovering = 4 UMETA(DisplayName = "Recovering"),
+	BeforeRecovering = 4 UMETA(DisplayName = "BeforeRecovering"),
 	Parry = 5 UMETA(DisplayName = "Parry"),
+	BeginParry = 6 UMETA(DisplayName = "BeginParry"),
+	CancelParry = 7 UMETA(DisplayName = "CancelParry"),
+	Block = 8 UMETA(DisplayName = "Block"),
+	SpecialAttack = 9 UMETA(DisplayName = "SpecialAttack"),
+	ReceiveDamage = 10 UMETA(DisplayName = "ReceiveDamage"),
 };
 
 
-UENUM(BlueprintType)
-enum class ParryStatus: uint8
-{
-	Idle = 0 UMETA(DisplayName = "Idle"),
-	BeginParry = 1 UMETA(DisplayName = "BeginParry"),
-	Parrying = 2 UMETA(DisplayName = "Parrying"),
-	CancelParry = 3 UMETA(DisplayName = "CancelParry"),
-};
+// UENUM(BlueprintType)
+// enum class ParryStatus: uint8
+// {
+// 	Idle = 0 UMETA(DisplayName = "Idle"),
+// 	BeginParry = 1 UMETA(DisplayName = "BeginParry"),
+// 	Parrying = 2 UMETA(DisplayName = "Parrying"),
+// 	CancelParry = 3 UMETA(DisplayName = "CancelParry"),
+// };
 
 
 

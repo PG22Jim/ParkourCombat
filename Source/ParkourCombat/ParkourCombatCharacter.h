@@ -6,7 +6,7 @@
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
 #include "ParkourMovementLinkedList.h"
-#include "Components/TimelineComponent.h"
+#include "BaseCharacter/BaseCharacter.h"
 #include "Player/ParkourInterface.h"
 #include "Player/PlayerCombatActionInterface.h"
 #include "ParkourCombatCharacter.generated.h"
@@ -21,12 +21,14 @@ DECLARE_DYNAMIC_DELEGATE_OneParam(FOnExecuteCombatAction, CombatStatus, CombatCo
 DECLARE_DYNAMIC_DELEGATE_OneParam(FOnFinishCombatAction, CombatStatus, CombatCommand);
 DECLARE_DYNAMIC_DELEGATE(FOnCancelParry);
 DECLARE_DYNAMIC_DELEGATE(FOnBufferCheck);
+DECLARE_DYNAMIC_DELEGATE_OneParam(FOnParryCounterAttack, AActor*, CounteringEnemy);
+DECLARE_DYNAMIC_DELEGATE_FourParams(FOnReceiveDamage, AActor*, DamageCauser, bool, PlayerBlocking, FVector, DamageReceiveLocation, CharacterDamageType, ReceiveDamageType);
 
 
 
 
 UCLASS(config=Game)
-class AParkourCombatCharacter : public ACharacter, public IParkourInterface, public IPlayerCombatActionInterface
+class AParkourCombatCharacter : public ABaseCharacter, public IParkourInterface, public IPlayerCombatActionInterface
 {
 private:
 
@@ -44,7 +46,10 @@ private:
 	FTimerHandle StopBackTrackTimerHandle;
 
 	void ResetPlayerMeshPosition();
-
+	bool CanMove();
+	bool IsParryingDamage(CharacterDamageType ReceiveDamageType);
+	bool IsBlockingDamage(CharacterDamageType ReceiveDamageType);
+	bool DamageReduction(float DamageAmount, bool IsBlock);
 	
 protected:
 
@@ -78,7 +83,8 @@ protected:
 	/** Parry Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* ParryAction;
-	
+
+	/** Cancel Parry Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* CancelParryAction;
 	
@@ -99,8 +105,28 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)	
 	CombatStatus CurrentCombatStatus = CombatStatus::Idle;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)	
-	ParryStatus CurrentParryStatus = ParryStatus::Idle;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float RevengeMeter = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float RevengeMeterAddingAmount = 20.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	float MaxRevenge = 100.0f;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	bool ActivateParry = false;
+	
+	float Health = 100.0f;
+	float MaxHealth = 100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin=0, ClampMax=100))
+	float PercentageToReduceDamage_Block = 50.0f;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category= DebugSetting)
+	AActor* DebugCounterTarget;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category= DebugSetting)
+	bool Debug_DamageBlockable;
 	
 public:
 
@@ -112,6 +138,8 @@ public:
 	FOnFinishCombatAction OnFinishCombatAction;
 	FOnCancelParry OnCancelParry;
 	FOnBufferCheck OnBufferCheck;
+	FOnParryCounterAttack OnParryCounterAttack;
+	FOnReceiveDamage OnReceiveDamage;
 
 	ParkourMovementLinkedList* StoredDestinationList = new ParkourMovementLinkedList();
 	BackTrackData_Stack* CurrenBackTrackData = new BackTrackData_Stack();
@@ -124,21 +152,17 @@ protected:
 	/** Called for movement input */
 	UFUNCTION()
 	void TryJump();
-
-	/** Called for movement input */
+	
 	UFUNCTION()
 	void TryNormalAttack();
 	
 	UFUNCTION()
 	void TryParry();
-
+	
 	UFUNCTION()
 	void TryCancelParry();
 	
-	/** Called for movement input */
 	void Move(const FInputActionValue& Value);
-
-	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
 
 
@@ -157,6 +181,8 @@ protected:
 	
 	// To add mapping context
 	virtual void BeginPlay();
+
+	virtual void Tick(float DeltaSeconds) override;
 
 	UFUNCTION(BlueprintCallable)
 	void LinkListTest_AddRandomData();	
@@ -196,21 +222,25 @@ public:
 	bool InRequestParkourState(ParkourStatus RequestStatus) const {return CurrentParkourStatus == RequestStatus;}
 
 	FVector GetMovementInputVector() const {return MovementInputVector;}
+
+	bool IsPlayerInvisible() const;
 	
+	bool RevengeMeterIncrease();
+	void ResetRevengeMeter() {RevengeMeter = 0.0f;}
 	
 	CombatStatus GetCurrentCombatStatus() const {return CurrentCombatStatus;}
 	void SetCurrentCombatStatus(CombatStatus NewStatus) { CurrentCombatStatus = NewStatus;}
-
-	UFUNCTION(BlueprintCallable, BlueprintPure)
-	ParryStatus GetCurrentParryStatus() const {return CurrentParryStatus;}
-
-	void SetCurrentParryStatus(ParryStatus NewStatus) { CurrentParryStatus = NewStatus;}
 	
 	UAnimMontage* GetCurrentAnimMontage() const;
 	
 	UAnimMontage* GetWallClimbMontage() const {return WallClimbMontage;}
 	void SetWallClimbMontage(UAnimMontage* NewMontage) {WallClimbMontage = NewMontage;}
 
+	UFUNCTION(BlueprintCallable, BlueprintPure)
+	float GetCurrentHealth() const {return Health;}
+
+
+	
 	void UpdateJumpClimbStartZ();
 
 
@@ -231,6 +261,10 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
 	void ClearMotionWarpingDestination_NormalAttack();
 	
+	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
+	void UpdateMotionWarpingDestination_CounterAttack(FTransform TransformToTarget);
+
+	
 	
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
 	void UpdateCurrentMotionWarpingDest(FTransform NewTransform);
@@ -238,7 +272,8 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
 	void DebugSphere(FVector Pos);
 
-
+	UFUNCTION(BlueprintCallable)
+	void DebugReceiveDamage();
 	
 	/** Returns CameraBoom subobject **/
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
@@ -250,7 +285,7 @@ public:
 	virtual void OnUpdateMeshPosition_Implementation() override;
 	virtual void OnFinishNormalAttack_Implementation() override;
 	virtual void OnEnterSpecificState_Implementation(CombatStatus State) override;
-	virtual void OnEnterSpecificParryState_Implementation(ParryStatus State) override;
-	
+
+	virtual void ReceiveDamage_Implementation(AActor* DamageCauser, float DamageAmount, FVector DamageReceiveLocation, CharacterDamageType ReceivingDamageType) override;
 };
 

@@ -27,6 +27,36 @@ void AParkourCombatCharacter::ResetPlayerMeshPosition()
 	}
 }
 
+bool AParkourCombatCharacter::CanMove()
+{
+	
+	return (CurrentCombatStatus == CombatStatus::Idle) && (CurrentParkourStatus == ParkourStatus::Idle || CurrentParkourStatus == ParkourStatus::Running);
+}
+
+bool AParkourCombatCharacter::IsParryingDamage(CharacterDamageType ReceiveDamageType)
+{
+	return CurrentCombatStatus == CombatStatus::BeginParry;
+}
+
+bool AParkourCombatCharacter::IsBlockingDamage(CharacterDamageType ReceiveDamageType)
+{
+	return (CurrentCombatStatus == CombatStatus::Parry || CurrentCombatStatus == CombatStatus::Block) && ReceiveDamageType == CharacterDamageType::HeavyDamage;
+}
+
+bool AParkourCombatCharacter::DamageReduction(float DamageAmount, bool IsBlock)
+{
+	if(IsBlock)
+	{
+		Health = UKismetMathLibrary::FClamp(Health - (DamageAmount - (DamageAmount * (PercentageToReduceDamage_Block / 100.0f))), 0.0f, MaxHealth);
+	}
+	else
+	{
+		Health = UKismetMathLibrary::FClamp(Health - DamageAmount, 0.0f, MaxHealth);
+	}
+
+	return Health > 0;
+}
+
 void AParkourCombatCharacter::ClearRecordFunction(const FInputActionValue& Value)
 {
 	MovementInputVector = FVector(0,0,0);
@@ -82,15 +112,14 @@ void AParkourCombatCharacter::TryNormalAttack()
 
 void AParkourCombatCharacter::TryParry()
 {
-	//GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("Try Parry!"));	
-	OnExecuteCombatAction.ExecuteIfBound(CombatStatus::Parry);
+	ActivateParry = true;
 }
 
 void AParkourCombatCharacter::TryCancelParry()
 {
 	//GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("Try Cancel Parry!"));	
 
-	if(CurrentParryStatus != ParryStatus::Idle || CurrentParryStatus != ParryStatus::CancelParry) OnCancelParry.ExecuteIfBound();
+	ActivateParry = false;
 }
 
 void AParkourCombatCharacter::BeginPlay()
@@ -123,6 +152,8 @@ void AParkourCombatCharacter::BeginPlay()
 	}
 
 
+	Health = MaxHealth;
+
 	// const UWorld* World = GetWorld();
 	// if(!World) return;
 	//
@@ -131,6 +162,15 @@ void AParkourCombatCharacter::BeginPlay()
 	// WorldTimerManager.SetTimer(RecordPositionTimerHandle,this, &AParkourCombatCharacter::RecordCurrentPositionToList, 0.015, true, -1);
 	//
 	//
+}
+
+void AParkourCombatCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if(ActivateParry) OnExecuteCombatAction.ExecuteIfBound(CombatStatus::Parry);
+	else OnCancelParry.ExecuteIfBound();
+
 }
 
 void AParkourCombatCharacter::LinkListTest_AddRandomData()
@@ -216,6 +256,18 @@ void AParkourCombatCharacter::StopBackTracking()
 	
 }
 
+bool AParkourCombatCharacter::IsPlayerInvisible() const
+{
+	return CurrentCombatStatus == CombatStatus::SpecialAttack;
+}
+
+bool AParkourCombatCharacter::RevengeMeterIncrease()
+{
+	RevengeMeter = UKismetMathLibrary::FClamp(RevengeMeter + RevengeMeterAddingAmount, 0, MaxRevenge);
+
+	return RevengeMeter >= MaxRevenge;
+}
+
 UAnimMontage* AParkourCombatCharacter::GetCurrentAnimMontage() const
 {
 	// TODO: Add method to decide which montage should be playing
@@ -225,6 +277,32 @@ UAnimMontage* AParkourCombatCharacter::GetCurrentAnimMontage() const
 void AParkourCombatCharacter::UpdateJumpClimbStartZ()
 {
 	JumpClimbStartZ = GetMesh()->GetComponentLocation().Z;
+}
+
+void AParkourCombatCharacter::DebugReceiveDamage()
+{
+	
+	FVector DebugImpactLocation = FVector(0,0,0);
+
+	const float RndNum = UKismetMathLibrary::RandomFloatInRange(0, 100);
+
+	if(RndNum < 25.0f)
+		DebugImpactLocation = GetActorLocation() + (GetActorForwardVector() * 150.0f); 
+	else if (RndNum >= 25 && RndNum < 50)
+		DebugImpactLocation = GetActorLocation() + ((GetActorForwardVector() * -1) * 150.0f); 
+	else if (RndNum >= 50 && RndNum < 75)
+		DebugImpactLocation = GetActorLocation() + (GetActorRightVector() * 150.0f);
+	else
+		DebugImpactLocation = GetActorLocation() + (GetActorRightVector() * -1 * 150.0f);
+
+	DebugSphere(DebugImpactLocation);
+
+	
+	if(Debug_DamageBlockable)
+		ReceiveDamage_Implementation(DebugCounterTarget, 1, DebugImpactLocation, CharacterDamageType::LightDamage);
+	else
+		ReceiveDamage_Implementation(DebugCounterTarget, 1, DebugImpactLocation, CharacterDamageType::LightDamage);
+		
 }
 
 void AParkourCombatCharacter::OnUpdateDestination_Implementation()
@@ -282,18 +360,49 @@ void AParkourCombatCharacter::OnEnterSpecificState_Implementation(CombatStatus S
 
 	CurrentCombatStatus = State;
 
-	if(CurrentCombatStatus == CombatStatus::BeforeRecovering)
+	if(CurrentCombatStatus == CombatStatus::NormalAttack || CurrentCombatStatus == CombatStatus::SpecialAttack)
+	{
+		
+		return;
+	}
+
+	if(CurrentCombatStatus == CombatStatus::BeforeRecovering || CurrentCombatStatus == CombatStatus::Parry)
 	{
 		OnBufferCheck.ExecuteIfBound();
 	}
 }
 
-void AParkourCombatCharacter::OnEnterSpecificParryState_Implementation(ParryStatus State)
-{
-	IPlayerCombatActionInterface::OnEnterSpecificParryState_Implementation(State);
 
-	SetCurrentParryStatus(State);
+
+void AParkourCombatCharacter::ReceiveDamage_Implementation(AActor* DamageCauser, float DamageAmount, FVector DamageReceiveLocation, CharacterDamageType ReceivingDamageType)
+{
+	IBaseDamageReceiveInterface::ReceiveDamage_Implementation(DamageCauser, DamageAmount, DamageReceiveLocation, ReceivingDamageType);
+
+	if(IsPlayerInvisible()) return;
+	
+	// If parry damage
+	if(IsParryingDamage(ReceivingDamageType))
+	{
+		if(!DamageCauser) return;
+		
+		OnParryCounterAttack.ExecuteIfBound(DamageCauser);
+		return;
+	}
+
+	// check if player is blocking enemy's blockable damage
+	const bool bBlockingDamage = IsBlockingDamage(ReceivingDamageType);
+
+	// damage reduction, check if player is still alive after receive damage
+	if(DamageReduction(DamageAmount, bBlockingDamage))
+	{
+		OnReceiveDamage.ExecuteIfBound(DamageCauser, bBlockingDamage, DamageReceiveLocation, ReceivingDamageType);
+		return;
+	}
+
+	// TODO: if player is dead
+	
 }
+
 
 //////////////////////////////////////////////////////////////////////////
 // Input
@@ -323,7 +432,6 @@ void AParkourCombatCharacter::SetupPlayerInputComponent(class UInputComponent* P
 		EnhancedInputComponent->BindAction(ParryAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryParry);
 		EnhancedInputComponent->BindAction(CancelParryAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryCancelParry);
 		
-		
 		//Moving
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::Move);
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::None, this, &AParkourCombatCharacter::ClearRecordFunction);
@@ -341,7 +449,7 @@ void AParkourCombatCharacter::Move(const FInputActionValue& Value)
 	FVector2D MovementVector = Value.Get<FVector2D>();
 	MovementInputVector = FVector(MovementVector.X, MovementVector.Y, 0);
 	
-	if (Controller != nullptr)
+	if (Controller != nullptr && CanMove())
 	{
 		// find out which way is forward
 		const FRotator Rotation = Controller->GetControlRotation();
@@ -353,13 +461,6 @@ void AParkourCombatCharacter::Move(const FInputActionValue& Value)
 		// get right vector 
 		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 		
-		// const FVector SelfPos = GetActorLocation();
-		// const FVector RightX = UKismetMathLibrary::GetRightVector(YawRotation);
-		// const FVector ForwardY = UKismetMathLibrary::GetForwardVector(YawRotation);
-		// const FVector RightInputDir = RightX * MovementVector.X;
-		// const FVector ForwardInputDir = ForwardY * MovementVector.Y;
-		// const FVector InputDest = SelfPos + ((RightInputDir * 50) + (ForwardInputDir * 50));
-		// MovementInputDirection = UKismetMathLibrary::GetDirectionUnitVector(SelfPos, InputDest);
 		
 		// add movement 
 		AddMovementInput(ForwardDirection, MovementVector.Y);
