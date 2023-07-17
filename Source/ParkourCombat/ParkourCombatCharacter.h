@@ -87,6 +87,11 @@ protected:
 	/** Cancel Parry Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* CancelParryAction;
+
+	/** Heal Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* HealAction;
+
 	
 	/** Move Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
@@ -101,9 +106,7 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)	
 	ParkourStatus CurrentParkourStatus = ParkourStatus::Idle;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)	
-	CombatStatus CurrentCombatStatus = CombatStatus::Idle;
+	
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	float RevengeMeter = 0;
@@ -116,8 +119,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	bool ActivateParry = false;
 	
-	float Health = 100.0f;
-	float MaxHealth = 100.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin=0, ClampMax=100))
 	float PercentageToReduceDamage_Block = 50.0f;
@@ -228,16 +229,11 @@ public:
 	bool RevengeMeterIncrease();
 	void ResetRevengeMeter() {RevengeMeter = 0.0f;}
 	
-	CombatStatus GetCurrentCombatStatus() const {return CurrentCombatStatus;}
-	void SetCurrentCombatStatus(CombatStatus NewStatus) { CurrentCombatStatus = NewStatus;}
-	
 	UAnimMontage* GetCurrentAnimMontage() const;
 	
 	UAnimMontage* GetWallClimbMontage() const {return WallClimbMontage;}
 	void SetWallClimbMontage(UAnimMontage* NewMontage) {WallClimbMontage = NewMontage;}
-
-	UFUNCTION(BlueprintCallable, BlueprintPure)
-	float GetCurrentHealth() const {return Health;}
+	
 
 
 	

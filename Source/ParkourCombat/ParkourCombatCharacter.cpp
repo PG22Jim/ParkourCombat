@@ -431,6 +431,10 @@ void AParkourCombatCharacter::SetupPlayerInputComponent(class UInputComponent* P
 		// Parry
 		EnhancedInputComponent->BindAction(ParryAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryParry);
 		EnhancedInputComponent->BindAction(CancelParryAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryCancelParry);
+
+
+		// Heal
+		EnhancedInputComponent->BindAction(HealAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryHeal);
 		
 		//Moving
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::Move);
