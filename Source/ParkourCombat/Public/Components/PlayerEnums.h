@@ -29,6 +29,10 @@ enum class CombatStatus: uint8
 	Block = 8 UMETA(DisplayName = "Block"),
 	SpecialAttack = 9 UMETA(DisplayName = "SpecialAttack"),
 	ReceiveDamage = 10 UMETA(DisplayName = "ReceiveDamage"),
+	ChargeAttack = 11 UMETA(DisplayName = "ChargeAttack"),
+	LaunchAttack = 12 UMETA(DisplayName = "LaunchAttack"),
+	RangeAttack = 13 UMETA(DisplayName = "RangeAttack"),
+	Healing = 13 UMETA(DisplayName = "Healing"),
 };
 
 

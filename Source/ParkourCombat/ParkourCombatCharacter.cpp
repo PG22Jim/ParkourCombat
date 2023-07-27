@@ -40,7 +40,7 @@ bool AParkourCombatCharacter::IsParryingDamage(CharacterDamageType ReceiveDamage
 
 bool AParkourCombatCharacter::IsBlockingDamage(CharacterDamageType ReceiveDamageType)
 {
-	return (CurrentCombatStatus == CombatStatus::Parry || CurrentCombatStatus == CombatStatus::Block) && ReceiveDamageType == CharacterDamageType::HeavyDamage;
+	return (CurrentCombatStatus == CombatStatus::Parry || CurrentCombatStatus == CombatStatus::Block) && ReceiveDamageType != CharacterDamageType::HeavyDamage;
 }
 
 bool AParkourCombatCharacter::DamageReduction(float DamageAmount, bool IsBlock)
@@ -60,6 +60,14 @@ bool AParkourCombatCharacter::DamageReduction(float DamageAmount, bool IsBlock)
 void AParkourCombatCharacter::ClearRecordFunction(const FInputActionValue& Value)
 {
 	MovementInputVector = FVector(0,0,0);
+}
+
+void AParkourCombatCharacter::CharacterOnDeath()
+{
+	Super::CharacterOnDeath();
+
+
+
 }
 
 AParkourCombatCharacter::AParkourCombatCharacter()
@@ -107,19 +115,32 @@ void AParkourCombatCharacter::TryJump()
 
 void AParkourCombatCharacter::TryNormalAttack()
 {
-	OnExecuteCombatAction.ExecuteIfBound(CombatStatus::NormalAttack);
+	if(AbleToMove)
+		OnExecuteCombatAction.ExecuteIfBound(CombatStatus::NormalAttack);
 }
 
 void AParkourCombatCharacter::TryParry()
 {
-	ActivateParry = true;
+	if(AbleToMove)
+		ActivateParry = true;
 }
 
 void AParkourCombatCharacter::TryCancelParry()
 {
-	//GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("Try Cancel Parry!"));	
+	if(AbleToMove)
+		ActivateParry = false;
+}
 
-	ActivateParry = false;
+void AParkourCombatCharacter::TryRangeAttack()
+{
+	if(AbleToMove)
+		OnExecuteCombatAction.ExecuteIfBound(CombatStatus::RangeAttack);
+
+}
+
+void AParkourCombatCharacter::TryHeal()
+{
+	if(AbleToMove) Super::TryHeal();
 }
 
 void AParkourCombatCharacter::BeginPlay()
@@ -154,14 +175,7 @@ void AParkourCombatCharacter::BeginPlay()
 
 	Health = MaxHealth;
 
-	// const UWorld* World = GetWorld();
-	// if(!World) return;
-	//
-	// FTimerManager& WorldTimerManager = World->GetTimerManager();
-	//
-	// WorldTimerManager.SetTimer(RecordPositionTimerHandle,this, &AParkourCombatCharacter::RecordCurrentPositionToList, 0.015, true, -1);
-	//
-	//
+
 }
 
 void AParkourCombatCharacter::Tick(float DeltaSeconds)
@@ -299,9 +313,9 @@ void AParkourCombatCharacter::DebugReceiveDamage()
 
 	
 	if(Debug_DamageBlockable)
-		ReceiveDamage_Implementation(DebugCounterTarget, 1, DebugImpactLocation, CharacterDamageType::LightDamage);
+		ReceiveDamage_Implementation(DebugCounterTarget, Debug_DamageAmount, DebugImpactLocation, CharacterDamageType::LightDamage);
 	else
-		ReceiveDamage_Implementation(DebugCounterTarget, 1, DebugImpactLocation, CharacterDamageType::LightDamage);
+		ReceiveDamage_Implementation(DebugCounterTarget, Debug_DamageAmount, DebugImpactLocation, CharacterDamageType::LightDamage);
 		
 }
 
@@ -372,13 +386,25 @@ void AParkourCombatCharacter::OnEnterSpecificState_Implementation(CombatStatus S
 	}
 }
 
+void AParkourCombatCharacter::OnUpdateRotationToTarget_Implementation()
+{
+	Super::OnUpdateRotationToTarget_Implementation();
+
+	if(!AttackTarget) return;
+
+	const FVector PlayerLocation = GetActorLocation();
+	const FVector TargetLocation = AttackTarget->GetActorLocation();
+
+	const FVector DirToEnemy = UKismetMathLibrary::Normal((TargetLocation - PlayerLocation));
+	SetActorRotation(UKismetMathLibrary::MakeRotFromX(DirToEnemy));
+}
 
 
 void AParkourCombatCharacter::ReceiveDamage_Implementation(AActor* DamageCauser, float DamageAmount, FVector DamageReceiveLocation, CharacterDamageType ReceivingDamageType)
 {
 	IBaseDamageReceiveInterface::ReceiveDamage_Implementation(DamageCauser, DamageAmount, DamageReceiveLocation, ReceivingDamageType);
 
-	if(IsPlayerInvisible()) return;
+	if(IsPlayerInvisible() || CurrentCombatStatus == CombatStatus::ReceiveDamage) return;
 	
 	// If parry damage
 	if(IsParryingDamage(ReceivingDamageType))
@@ -400,7 +426,8 @@ void AParkourCombatCharacter::ReceiveDamage_Implementation(AActor* DamageCauser,
 	}
 
 	// TODO: if player is dead
-	
+
+	CharacterOnDeath();
 }
 
 
@@ -432,6 +459,9 @@ void AParkourCombatCharacter::SetupPlayerInputComponent(class UInputComponent* P
 		EnhancedInputComponent->BindAction(ParryAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryParry);
 		EnhancedInputComponent->BindAction(CancelParryAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryCancelParry);
 
+		// Fire Range Attack
+		EnhancedInputComponent->BindAction(RangeAttack, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryRangeAttack);
+
 
 		// Heal
 		EnhancedInputComponent->BindAction(HealAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryHeal);
@@ -449,39 +479,45 @@ void AParkourCombatCharacter::SetupPlayerInputComponent(class UInputComponent* P
 
 void AParkourCombatCharacter::Move(const FInputActionValue& Value)
 {
-	// input is a Vector2D
-	FVector2D MovementVector = Value.Get<FVector2D>();
-	MovementInputVector = FVector(MovementVector.X, MovementVector.Y, 0);
-	
-	if (Controller != nullptr && CanMove())
+	if(AbleToMove)
 	{
-		// find out which way is forward
-		const FRotator Rotation = Controller->GetControlRotation();
-		const FRotator YawRotation(0, Rotation.Yaw, 0);
+		// input is a Vector2D
+		FVector2D MovementVector = Value.Get<FVector2D>();
+		MovementInputVector = FVector(MovementVector.X, MovementVector.Y, 0);
+		
+		if (Controller != nullptr && CanMove())
+		{
+			// find out which way is forward
+			const FRotator Rotation = Controller->GetControlRotation();
+			const FRotator YawRotation(0, Rotation.Yaw, 0);
 
-		// get forward vector
-		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-	
-		// get right vector 
-		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+			// get forward vector
+			const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 		
-		
-		// add movement 
-		AddMovementInput(ForwardDirection, MovementVector.Y);
-		AddMovementInput(RightDirection, MovementVector.X);
+			// get right vector 
+			const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+			
+			
+			// add movement 
+			AddMovementInput(ForwardDirection, MovementVector.Y);
+			AddMovementInput(RightDirection, MovementVector.X);
+		}
 	}
 }
 
 void AParkourCombatCharacter::Look(const FInputActionValue& Value)
 {
-	// input is a Vector2D
-	FVector2D LookAxisVector = Value.Get<FVector2D>();
-
-	if (Controller != nullptr)
+	if(AbleToMove)
 	{
-		// add yaw and pitch input to controller
-		AddControllerYawInput(LookAxisVector.X);
-		AddControllerPitchInput(LookAxisVector.Y);
+		// input is a Vector2D
+		FVector2D LookAxisVector = Value.Get<FVector2D>();
+
+		if (Controller != nullptr)
+		{
+			// add yaw and pitch input to controller
+			AddControllerYawInput(LookAxisVector.X);
+			AddControllerPitchInput(LookAxisVector.Y);
+		}
 	}
 }
 

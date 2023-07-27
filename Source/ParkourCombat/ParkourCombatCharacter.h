@@ -26,7 +26,6 @@ DECLARE_DYNAMIC_DELEGATE_FourParams(FOnReceiveDamage, AActor*, DamageCauser, boo
 
 
 
-
 UCLASS(config=Game)
 class AParkourCombatCharacter : public ABaseCharacter, public IParkourInterface, public IPlayerCombatActionInterface
 {
@@ -45,6 +44,8 @@ private:
 	FTimerHandle BackTrackingTimerHandle;
 	FTimerHandle StopBackTrackTimerHandle;
 
+	AActor* AttackTarget;
+
 	void ResetPlayerMeshPosition();
 	bool CanMove();
 	bool IsParryingDamage(CharacterDamageType ReceiveDamageType);
@@ -56,6 +57,9 @@ protected:
 
 	UFUNCTION()
 	void ClearRecordFunction(const FInputActionValue& Value);
+
+
+	virtual void CharacterOnDeath() override;
 	
 	
 	GENERATED_BODY()
@@ -91,6 +95,10 @@ protected:
 	/** Heal Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* HealAction;
+
+	/** Range Attack Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* RangeAttack;
 
 	
 	/** Move Input Action */
@@ -128,6 +136,10 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category= DebugSetting)
 	bool Debug_DamageBlockable;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category= DebugSetting)
+	float Debug_DamageAmount = 100.0f;
+
 	
 public:
 
@@ -162,6 +174,12 @@ protected:
 	
 	UFUNCTION()
 	void TryCancelParry();
+
+	UFUNCTION()
+	void TryRangeAttack();
+
+	virtual void TryHeal() override;
+
 	
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
@@ -218,10 +236,16 @@ public:
 
 
 	// ================================================== Get And Set ============================================================
+	
 	ParkourStatus GetCurrentParkourStatus() const {return CurrentParkourStatus;}
 	void SetCurrentParkourStatus(ParkourStatus NewStatus) { CurrentParkourStatus = NewStatus;}
 	bool InRequestParkourState(ParkourStatus RequestStatus) const {return CurrentParkourStatus == RequestStatus;}
 
+	AActor* GetAttackTarget() const {return AttackTarget;}
+	void SetAttackTarget(AActor* NewTarget) {AttackTarget = NewTarget;}
+	void ClearAttackTarget() {AttackTarget = nullptr;}
+
+	
 	FVector GetMovementInputVector() const {return MovementInputVector;}
 
 	bool IsPlayerInvisible() const;
@@ -259,7 +283,6 @@ public:
 	
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
 	void UpdateMotionWarpingDestination_CounterAttack(FTransform TransformToTarget);
-
 	
 	
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
@@ -282,6 +305,8 @@ public:
 	virtual void OnFinishNormalAttack_Implementation() override;
 	virtual void OnEnterSpecificState_Implementation(CombatStatus State) override;
 
+	virtual void OnUpdateRotationToTarget_Implementation() override;
+	
 	virtual void ReceiveDamage_Implementation(AActor* DamageCauser, float DamageAmount, FVector DamageReceiveLocation, CharacterDamageType ReceivingDamageType) override;
 };
 

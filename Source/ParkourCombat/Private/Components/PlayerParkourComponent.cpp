@@ -39,7 +39,8 @@ void UPlayerParkourComponent::BeginPlay()
 	
 	InitializeDelegate();
 
-	ParkourTickStart();
+	// TODO: UnComment it
+	//ParkourTickStart();
 }
 
 void UPlayerParkourComponent::InitializeDelegate()
