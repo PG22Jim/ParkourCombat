@@ -206,8 +206,8 @@ void AParkourCombatCharacter::LinkListTest_PrintAll()
 
 		while (IterationData)
 		{
-			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red,IterationData->TransformData.ToString());
-			IterationData = IterationData->NextTransform;
+			//GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Red,IterationData->TransformData.ToString());
+			IterationData = IterationData->NextFrameData;
 		}
 		GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("Print Finish"));	
 
@@ -253,7 +253,7 @@ void AParkourCombatCharacter::BackTrackTransform()
 	if(!CurrentTopData) return;
 
 	// 
-	SetActorTransform(CurrentTopData->TransformData);
+	//SetActorTransform(CurrentTopData->TransformData);
 	CurrenBackTrackData->Pop();
 	
 }
@@ -284,8 +284,8 @@ bool AParkourCombatCharacter::RevengeMeterIncrease()
 
 UAnimMontage* AParkourCombatCharacter::GetCurrentAnimMontage() const
 {
-	// TODO: Add method to decide which montage should be playing
-	return nullptr;
+	// Add method to decide which montage should be playing
+	return GetCurrentMontage();
 }
 
 void AParkourCombatCharacter::UpdateJumpClimbStartZ()
@@ -333,13 +333,13 @@ void AParkourCombatCharacter::OnUpdateDestination_Implementation()
 	}
 	else
 	{
-		ParkourPositionData* NewParkourDest = CurrentMotionWarpDest->NextTransform;
+		ParkourPositionData* NewParkourDest = CurrentMotionWarpDest->NextFrameData;
 		if(!NewParkourDest) return;
 	
 		CurrentMotionWarpDest = NewParkourDest;
 	}
 	
-	UpdateCurrentMotionWarpingDest(CurrentMotionWarpDest->TransformData);
+	//UpdateCurrentMotionWarpingDest(CurrentMotionWarpDest->TransformData);
 }
 
 void AParkourCombatCharacter::OnParkourActionEnd_Implementation()
