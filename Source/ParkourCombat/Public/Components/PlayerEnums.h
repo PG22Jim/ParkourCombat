@@ -32,7 +32,17 @@ enum class CombatStatus: uint8
 	ChargeAttack = 11 UMETA(DisplayName = "ChargeAttack"),
 	LaunchAttack = 12 UMETA(DisplayName = "LaunchAttack"),
 	RangeAttack = 13 UMETA(DisplayName = "RangeAttack"),
-	Healing = 13 UMETA(DisplayName = "Healing"),
+	Healing = 14 UMETA(DisplayName = "Healing"),
+	CounterDodge = 15 UMETA(DisplayName = "CounterDodge"),
+	Dodge = 16 UMETA(DisplayName = "Dodge"),
+	DodgeSuccess = 17 UMETA(DisplayName = "DodgeSuccess"),
+};
+
+UENUM(BlueprintType)
+enum class DodgeDirection: uint8
+{
+	Left = 0 UMETA(DisplayName = "Left"),
+	Right = 1 UMETA(DisplayName = "Right"),
 };
 
 

@@ -9,6 +9,8 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 
 
@@ -110,11 +112,12 @@ AParkourCombatCharacter::AParkourCombatCharacter()
 
 void AParkourCombatCharacter::TryJump()
 {
-	OnJumpExecuteDelegate.ExecuteIfBound();
+	if(AbleToMove) OnJumpExecuteDelegate.ExecuteIfBound();
 }
 
 void AParkourCombatCharacter::TryNormalAttack()
 {
+	
 	if(AbleToMove)
 		OnExecuteCombatAction.ExecuteIfBound(CombatStatus::NormalAttack);
 }
@@ -138,6 +141,12 @@ void AParkourCombatCharacter::TryRangeAttack()
 
 }
 
+void AParkourCombatCharacter::TryDodge()
+{
+	if(AbleToMove)
+		OnExecuteCombatAction.ExecuteIfBound(CombatStatus::CounterDodge);
+}
+
 void AParkourCombatCharacter::TryHeal()
 {
 	if(AbleToMove) Super::TryHeal();
@@ -155,6 +164,8 @@ void AParkourCombatCharacter::BeginPlay()
 		{
 			Subsystem->AddMappingContext(DefaultMappingContext, 0);
 		}
+
+		UWidgetBlueprintLibrary::SetInputMode_GameOnly(PlayerController);
 	}
 
 	
@@ -272,7 +283,7 @@ void AParkourCombatCharacter::StopBackTracking()
 
 bool AParkourCombatCharacter::IsPlayerInvisible() const
 {
-	return CurrentCombatStatus == CombatStatus::SpecialAttack;
+	return CurrentCombatStatus == CombatStatus::SpecialAttack || CurrentCombatStatus == CombatStatus::DodgeSuccess || CurrentCombatStatus == CombatStatus::Dodge;
 }
 
 bool AParkourCombatCharacter::RevengeMeterIncrease()
@@ -291,6 +302,45 @@ UAnimMontage* AParkourCombatCharacter::GetCurrentAnimMontage() const
 void AParkourCombatCharacter::UpdateJumpClimbStartZ()
 {
 	JumpClimbStartZ = GetMesh()->GetComponentLocation().Z;
+}
+
+void AParkourCombatCharacter::FocusEnemy(AActor* LockActor)
+{
+	if(!LockActor) return;
+
+	const UWorld* World = GetWorld();
+	if(!World) return;
+	
+	if(!LockTarget)
+	{
+		LockTarget = LockActor;
+	}
+
+	// WorldTimerManager.SetTimer(StopBackTrackTimerHandle,this, &AParkourCombatCharacter::StopBackTracking, 10.0f, false, -1);
+
+	World->GetTimerManager().SetTimer(TargetLockTickTimerHandle, this, &AParkourCombatCharacter::TickLockOn, 0.02, true, -1);
+	
+}
+
+void AParkourCombatCharacter::UnFocusEnemy()
+{
+	const UWorld* World = GetWorld();
+	if(!World) return;
+
+	World->GetTimerManager().ClearTimer(TargetLockTickTimerHandle);
+}
+
+void AParkourCombatCharacter::TickLockOn()
+{
+	if(!LockTarget) return;
+	
+	AController* PlayerControl = GetController();
+
+	FVector LookFromPos = GetActorLocation();
+	LookFromPos.Z += 200.0f;
+	const FVector TargetPos = LockTarget->GetActorLocation();
+	const FRotator LookRot = UKismetMathLibrary::FindLookAtRotation(LookFromPos, TargetPos);
+	PlayerControl->SetControlRotation(LookRot);
 }
 
 void AParkourCombatCharacter::DebugReceiveDamage()
@@ -346,6 +396,8 @@ void AParkourCombatCharacter::OnParkourActionEnd_Implementation()
 {
 	IParkourInterface::OnParkourActionEnd_Implementation();
 
+	if(IsInRewind) return;
+	
 	const bool IsExecuted = OnExecuteFinishParkourAction.ExecuteIfBound();
 }
 
@@ -353,6 +405,8 @@ void AParkourCombatCharacter::OnUpdateMeshPosition_Implementation()
 {
 	IParkourInterface::OnUpdateMeshPosition_Implementation();
 
+	if(IsInRewind) return;
+	
 	USkeletalMeshComponent* PlayerMeshComp = GetMesh();
 	if(!PlayerMeshComp) return;
 
@@ -365,6 +419,8 @@ void AParkourCombatCharacter::OnFinishNormalAttack_Implementation()
 {
 	IPlayerCombatActionInterface::OnFinishNormalAttack_Implementation();
 
+	if(IsInRewind) return;
+	
 	OnFinishCombatAction.ExecuteIfBound(CombatStatus::NormalAttack);
 }
 
@@ -372,6 +428,8 @@ void AParkourCombatCharacter::OnEnterSpecificState_Implementation(CombatStatus S
 {
 	IPlayerCombatActionInterface::OnEnterSpecificState_Implementation(State);
 
+	if(IsInRewind) return;
+	
 	CurrentCombatStatus = State;
 
 	if(CurrentCombatStatus == CombatStatus::NormalAttack || CurrentCombatStatus == CombatStatus::SpecialAttack)
@@ -390,6 +448,9 @@ void AParkourCombatCharacter::OnUpdateRotationToTarget_Implementation()
 {
 	Super::OnUpdateRotationToTarget_Implementation();
 
+	if(IsInRewind) return;
+
+	
 	if(!AttackTarget) return;
 
 	const FVector PlayerLocation = GetActorLocation();
@@ -404,7 +465,21 @@ void AParkourCombatCharacter::ReceiveDamage_Implementation(AActor* DamageCauser,
 {
 	IBaseDamageReceiveInterface::ReceiveDamage_Implementation(DamageCauser, DamageAmount, DamageReceiveLocation, ReceivingDamageType);
 
-	if(IsPlayerInvisible() || CurrentCombatStatus == CombatStatus::ReceiveDamage) return;
+	if(IsInRewind) return;
+
+	
+	//if(IsPlayerInvisible() || CurrentCombatStatus == CombatStatus::ReceiveDamage) return;
+	if(IsPlayerInvisible()) return;
+
+	// if dodge success
+	if(CurrentCombatStatus == CombatStatus::CounterDodge)
+	{
+		if(!DamageCauser) return;
+		SetAttackTarget(DamageCauser);
+		OnDodgeSuccessDelegate.ExecuteIfBound();
+		return;
+	}
+	
 	
 	// If parry damage
 	if(IsParryingDamage(ReceivingDamageType))
@@ -428,6 +503,26 @@ void AParkourCombatCharacter::ReceiveDamage_Implementation(AActor* DamageCauser,
 	// TODO: if player is dead
 
 	CharacterOnDeath();
+}
+
+void AParkourCombatCharacter::OnFinishHealItemAnim_Implementation()
+{
+	Super::OnFinishHealItemAnim_Implementation();
+
+	if(IsInRewind) return;
+	
+	OnFinishCombatAction.ExecuteIfBound(CombatStatus::NormalAttack);
+}
+
+void AParkourCombatCharacter::OnFinishDodgeSuccessTime_Implementation()
+{
+	IPlayerCombatActionInterface::OnFinishDodgeSuccessTime_Implementation();
+
+	if(IsInRewind) return;
+
+	UGameplayStatics::SetGlobalTimeDilation(GetWorld(), 1);
+	
+	OnEnterSpecificState_Implementation(CombatStatus::Idle);
 }
 
 
@@ -470,6 +565,9 @@ void AParkourCombatCharacter::SetupPlayerInputComponent(class UInputComponent* P
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::Move);
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::None, this, &AParkourCombatCharacter::ClearRecordFunction);
 
+		// Dodge
+		EnhancedInputComponent->BindAction(DodgeAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryDodge);
+		
 		//Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::Look);
 

@@ -40,7 +40,7 @@ void UPlayerParkourComponent::BeginPlay()
 	InitializeDelegate();
 
 	// TODO: UnComment it
-	//ParkourTickStart();
+	ParkourTickStart();
 }
 
 void UPlayerParkourComponent::InitializeDelegate()
@@ -75,6 +75,16 @@ bool UPlayerParkourComponent::IsPlayerDoingParkourAction()
 	return CurrentParkourStatus == ParkourStatus::SlideThrough || CurrentParkourStatus == ParkourStatus::QuickWallClimb || CurrentParkourStatus == ParkourStatus::VaultThroughSmallWall;
 }
 
+bool UPlayerParkourComponent::IsTraceObjectAbleParkour(AActor* TraceResultActor) const
+{
+	// if trace result actor is enemy or projectile, return true
+
+	if(TraceResultActor->IsA(ABaseCharacter::StaticClass())) return false;
+	if(TraceResultActor->IsA(ASwordProjectile::StaticClass())) return false;
+
+	return true;
+}
+
 // Called every frame
 void UPlayerParkourComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
@@ -90,12 +100,15 @@ void UPlayerParkourComponent::TickComponent(float DeltaTime, ELevelTick TickType
 void UPlayerParkourComponent::ParkourTickCheck()
 {
 	// if player is not running and player is not performing parkour action, enter Idle state
-	if(!IsRunning() && !IsPlayerDoingParkourAction())
+	if(!PlayerOwnerRef) return;
+	
+	const bool bPlayerMoving = PlayerOwnerRef->IsCharacterRunning();
+	
+	if(!bPlayerMoving && !IsPlayerDoingParkourAction())
 	{
 		EnterIdleState();
 	}
 
-	if(!PlayerOwnerRef) return;
 
 	if(IsExecutingCombat()) return;
 	
@@ -103,7 +116,7 @@ void UPlayerParkourComponent::ParkourTickCheck()
 
 	
 	// if player is in idle state but has velocity, enter running state
-	if(CurrentParkourStatus == ParkourStatus::Idle)
+	if(CurrentParkourStatus == ParkourStatus::Idle && bPlayerMoving)
 	{
 		EnterRunningState();
 		return;
@@ -158,9 +171,12 @@ bool UPlayerParkourComponent::VaultingCheck() const
 
 	// Sphere trace by channel from Kismet System Library
 	const bool bIsInRange = UKismetSystemLibrary::SphereTraceSingle(this, PlayerCurrentPos, InRangeEndPos, 10.0f, UEngineTypes::ConvertToTraceType(ECC_Visibility), false, IgnoreActors, EDrawDebugTrace::None, Hit, true);
-
+	
+	
 	if(!bIsInRange)
 		return false;
+	
+	if(!IsTraceObjectAbleParkour(Hit.GetActor())) return false;
 	
 
 	// SECOND CHECK: has enough space for player to run before vaulting
@@ -449,13 +465,11 @@ void UPlayerParkourComponent::OnJumpExecution()
 // ============================================= Utility =============================================
 bool UPlayerParkourComponent::IsRunning()
 {
-	if(!PlayerChaMoveCompRef) return false;
+	if(!PlayerOwnerRef) return false;
 
-	const FVector LastVelocity = PlayerChaMoveCompRef->GetLastUpdateVelocity();
-	const float VelocityLength = LastVelocity.Size2D();
-
-	return VelocityLength > 0;
-	
+	const FVector PlayerVelocity = PlayerOwnerRef->GetVelocity();
+	const float VectorLength = FMath::Sqrt(FMath::Square(PlayerVelocity.X) + FMath::Square(PlayerVelocity.Y) + FMath::Square(PlayerVelocity.Z));
+	return VectorLength > 0;
 }
 
 bool UPlayerParkourComponent::IsExecutingCombat()

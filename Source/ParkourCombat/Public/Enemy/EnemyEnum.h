@@ -36,3 +36,53 @@ enum class EnemyAttackCategory: uint8
 	LongRangeAttack = 3 UMETA(DisplayName = "LongRangeAttack"),
 	None = 4 UMETA(DisplayName = "None"),
 };
+
+
+UENUM(BlueprintType)
+enum class EEnemyReplayCommand: uint8
+{
+	NormalAttack = 0 UMETA(DisplayName = "NormalAttack"),
+	ChargeAttack = 1 UMETA(DisplayName = "ChargeAttack"),
+	LaunchAttack = 3 UMETA(DisplayName = "LaunchAttack"),
+	LongRangeAttack = 4 UMETA(DisplayName = "LongRangeAttack"),
+	Counter = 5 UMETA(DisplayName = "Counter"),
+	Heal = 6 UMETA(DisplayName = "Heal"),
+	None = 7 UMETA(DisplayName = "None"),
+};
+
+UENUM(BlueprintType)
+enum class EEnemyTaskStatus: uint8
+{
+	None = 0 UMETA(DisplayName = "NormalAttack"),
+	Decided = 1 UMETA(DisplayName = "Decided"),
+	Executing = 2 UMETA(DisplayName = "Executing"),
+};
+
+struct EnemyNormalAttackSequence
+{
+private:
+	int32 NAttackComboExecutionCount = 0;
+	int32 IndexToChargeAttackSetting = 99;
+	int32 StoredCurrentNAttackCount = 0;
+	
+
+public:
+
+	EnemyNormalAttackSequence()
+	{
+		NAttackComboExecutionCount = 0;
+		IndexToChargeAttackSetting = 99;
+		StoredCurrentNAttackCount = 0;
+	}
+	EnemyNormalAttackSequence(int32 StoringNAComboCount, int32 StoringIndexToCA, int32 StoringCurrentNACount)
+	{
+		NAttackComboExecutionCount = StoringNAComboCount;
+		IndexToChargeAttackSetting = StoringIndexToCA;
+		StoredCurrentNAttackCount = StoringCurrentNACount;
+	}
+
+	int32 GetNAttackComboExecutionCount() const {return NAttackComboExecutionCount;}
+	int32 GetIndexToChargeAttackSetting() const {return IndexToChargeAttackSetting;}
+	int32 GetStoredCurrentNAttackCount() const {return StoredCurrentNAttackCount;}
+	
+};

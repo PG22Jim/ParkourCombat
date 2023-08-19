@@ -19,6 +19,7 @@ private:
 	void ParkourTickStart();
 
 	bool IsPlayerDoingParkourAction();
+	bool IsTraceObjectAbleParkour(AActor* TraceResultActor) const;
 
 protected:
 

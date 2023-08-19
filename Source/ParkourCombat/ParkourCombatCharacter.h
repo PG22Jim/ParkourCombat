@@ -23,6 +23,7 @@ DECLARE_DYNAMIC_DELEGATE(FOnCancelParry);
 DECLARE_DYNAMIC_DELEGATE(FOnBufferCheck);
 DECLARE_DYNAMIC_DELEGATE_OneParam(FOnParryCounterAttack, AActor*, CounteringEnemy);
 DECLARE_DYNAMIC_DELEGATE_FourParams(FOnReceiveDamage, AActor*, DamageCauser, bool, PlayerBlocking, FVector, DamageReceiveLocation, CharacterDamageType, ReceiveDamageType);
+DECLARE_DYNAMIC_DELEGATE(FOnDodgeSuccess);
 
 
 
@@ -32,7 +33,7 @@ class AParkourCombatCharacter : public ABaseCharacter, public IParkourInterface,
 private:
 
 	ParkourPositionData* CurrentMotionWarpDest;
-
+	
 	float MeshCapsuleVerticalOffset = 0;
 	float JumpClimbStartZ = 0;
 
@@ -43,14 +44,18 @@ private:
 	FTimerHandle RecordPositionTimerHandle;
 	FTimerHandle BackTrackingTimerHandle;
 	FTimerHandle StopBackTrackTimerHandle;
+	FTimerHandle TargetLockTickTimerHandle;
 
 	AActor* AttackTarget;
+	AActor* LockTarget;
 
 	void ResetPlayerMeshPosition();
 	bool CanMove();
 	bool IsParryingDamage(CharacterDamageType ReceiveDamageType);
 	bool IsBlockingDamage(CharacterDamageType ReceiveDamageType);
 	bool DamageReduction(float DamageAmount, bool IsBlock);
+
+	
 	
 protected:
 
@@ -100,6 +105,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* RangeAttack;
 
+	/** Dodge Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* DodgeAction;
 	
 	/** Move Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
@@ -153,6 +161,7 @@ public:
 	FOnBufferCheck OnBufferCheck;
 	FOnParryCounterAttack OnParryCounterAttack;
 	FOnReceiveDamage OnReceiveDamage;
+	FOnDodgeSuccess OnDodgeSuccessDelegate;
 
 	ParkourMovementLinkedList* StoredDestinationList = new ParkourMovementLinkedList();
 	BackTrackData_Stack* CurrenBackTrackData = new BackTrackData_Stack();
@@ -178,6 +187,9 @@ protected:
 	UFUNCTION()
 	void TryRangeAttack();
 
+	UFUNCTION()
+	void TryDodge();
+
 	virtual void TryHeal() override;
 
 	
@@ -194,6 +206,10 @@ protected:
 	UFUNCTION()
 	void OnResumeMeshZPosition(UAnimMontage* Montage, bool bInterrupted);
 
+	UFUNCTION()
+	void TickLockOn();
+
+	
 protected:
 	// APawn interface
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
@@ -245,6 +261,8 @@ public:
 	void SetAttackTarget(AActor* NewTarget) {AttackTarget = NewTarget;}
 	void ClearAttackTarget() {AttackTarget = nullptr;}
 
+	bool GetAbleToMove() const {return AbleToMove;}
+	void SetAbleToMove(bool bPaused) {AbleToMove = bPaused;}
 	
 	FVector GetMovementInputVector() const {return MovementInputVector;}
 
@@ -264,7 +282,8 @@ public:
 	void UpdateJumpClimbStartZ();
 
 
-
+	void FocusEnemy(AActor* LockActor);
+	void UnFocusEnemy();
 	
 	UFUNCTION(BlueprintCallable, BlueprintImplementableEvent)
 	void UpdateMotionWarpingDestination_Vaulting(FTransform FirstDest, FTransform SecondDest, FTransform ThirdDest, FTransform FinalDest);
@@ -304,9 +323,10 @@ public:
 	virtual void OnUpdateMeshPosition_Implementation() override;
 	virtual void OnFinishNormalAttack_Implementation() override;
 	virtual void OnEnterSpecificState_Implementation(CombatStatus State) override;
-
 	virtual void OnUpdateRotationToTarget_Implementation() override;
-	
 	virtual void ReceiveDamage_Implementation(AActor* DamageCauser, float DamageAmount, FVector DamageReceiveLocation, CharacterDamageType ReceivingDamageType) override;
+	virtual void OnFinishHealItemAnim_Implementation() override;
+	virtual void OnFinishDodgeSuccessTime_Implementation() override;
 };
+
 
