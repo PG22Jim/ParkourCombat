@@ -34,7 +34,9 @@ enum class EnemyAttackCategory: uint8
 	ChargeAttack = 1 UMETA(DisplayName = "ChargeAttack"),
 	LaunchAttack = 2 UMETA(DisplayName = "LaunchAttack"),
 	LongRangeAttack = 3 UMETA(DisplayName = "LongRangeAttack"),
-	None = 4 UMETA(DisplayName = "None"),
+	RageAttack = 4 UMETA(DisplayName = "RageAttack"),
+	
+	None = 5 UMETA(DisplayName = "None"),
 };
 
 

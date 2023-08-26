@@ -24,6 +24,8 @@ DECLARE_DYNAMIC_DELEGATE(FOnBufferCheck);
 DECLARE_DYNAMIC_DELEGATE_OneParam(FOnParryCounterAttack, AActor*, CounteringEnemy);
 DECLARE_DYNAMIC_DELEGATE_FourParams(FOnReceiveDamage, AActor*, DamageCauser, bool, PlayerBlocking, FVector, DamageReceiveLocation, CharacterDamageType, ReceiveDamageType);
 DECLARE_DYNAMIC_DELEGATE(FOnDodgeSuccess);
+DECLARE_DYNAMIC_DELEGATE(FCancelChargeAttack);
+DECLARE_DYNAMIC_DELEGATE(FPerformChargeAttack);
 
 
 
@@ -37,6 +39,8 @@ private:
 	float MeshCapsuleVerticalOffset = 0;
 	float JumpClimbStartZ = 0;
 
+	float CurrentStaminaCooldown = 0;
+	
 	UAnimMontage* WallClimbMontage = nullptr;
 
 	class UPlayerParkourComponent* OwningParkourComponent;
@@ -45,6 +49,8 @@ private:
 	FTimerHandle BackTrackingTimerHandle;
 	FTimerHandle StopBackTrackTimerHandle;
 	FTimerHandle TargetLockTickTimerHandle;
+	FTimerHandle StaminaRegenTimerHandle;
+	FTimerHandle StaminaRegenCoolDownTimerHandle;
 
 	AActor* AttackTarget;
 	AActor* LockTarget;
@@ -53,9 +59,9 @@ private:
 	bool CanMove();
 	bool IsParryingDamage(CharacterDamageType ReceiveDamageType);
 	bool IsBlockingDamage(CharacterDamageType ReceiveDamageType);
-	bool DamageReduction(float DamageAmount, bool IsBlock);
-
 	
+
+	bool IsChargeAttack = false;
 	
 protected:
 
@@ -108,6 +114,17 @@ protected:
 	/** Dodge Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* DodgeAction;
+
+	/** Charge Attack Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* ChargeAttackAction;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* CancelChargeAttack;
+
+	/** Rage Attack Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* RageAttackAction;
 	
 	/** Move Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
@@ -135,10 +152,6 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	bool ActivateParry = false;
 	
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta=(ClampMin=0, ClampMax=100))
-	float PercentageToReduceDamage_Block = 50.0f;
-	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category= DebugSetting)
 	AActor* DebugCounterTarget;
 
@@ -162,6 +175,8 @@ public:
 	FOnParryCounterAttack OnParryCounterAttack;
 	FOnReceiveDamage OnReceiveDamage;
 	FOnDodgeSuccess OnDodgeSuccessDelegate;
+	FCancelChargeAttack CancelChargeAttackDelegate;
+	FPerformChargeAttack PerformChargeAttackDelegate;
 
 	ParkourMovementLinkedList* StoredDestinationList = new ParkourMovementLinkedList();
 	BackTrackData_Stack* CurrenBackTrackData = new BackTrackData_Stack();
@@ -177,6 +192,12 @@ protected:
 	
 	UFUNCTION()
 	void TryNormalAttack();
+
+	UFUNCTION()
+	void TryChargeAttack();
+	
+	UFUNCTION()
+	void TryCancelChargeAttack();
 	
 	UFUNCTION()
 	void TryParry();
@@ -189,6 +210,9 @@ protected:
 
 	UFUNCTION()
 	void TryDodge();
+
+	UFUNCTION()
+	void TryRageAttack();
 
 	virtual void TryHeal() override;
 
@@ -208,6 +232,12 @@ protected:
 
 	UFUNCTION()
 	void TickLockOn();
+
+	UFUNCTION()
+	void StaminaTickRegen();
+
+	UFUNCTION()
+	void StaminaCoolDownTick();
 
 	
 protected:
@@ -257,12 +287,23 @@ public:
 	void SetCurrentParkourStatus(ParkourStatus NewStatus) { CurrentParkourStatus = NewStatus;}
 	bool InRequestParkourState(ParkourStatus RequestStatus) const {return CurrentParkourStatus == RequestStatus;}
 
+	bool OnCostStamina(float CostAmount);
+	void StartStaminaRegenCoolDown();
+	
+	
 	AActor* GetAttackTarget() const {return AttackTarget;}
 	void SetAttackTarget(AActor* NewTarget) {AttackTarget = NewTarget;}
 	void ClearAttackTarget() {AttackTarget = nullptr;}
 
+	bool GetIsChargeAttack() const {return IsChargeAttack;}
+	void SetIsChargeAttack(bool bChargeAttack) {IsChargeAttack = bChargeAttack;}
+
 	bool GetAbleToMove() const {return AbleToMove;}
 	void SetAbleToMove(bool bPaused) {AbleToMove = bPaused;}
+
+	float GetRevengeMeter() const {return RevengeMeter;}
+	float GetMaxRevenge() const {return MaxRevenge;}
+
 	
 	FVector GetMovementInputVector() const {return MovementInputVector;}
 
@@ -280,7 +321,8 @@ public:
 
 	
 	void UpdateJumpClimbStartZ();
-
+	void PlayReceiveRageAttackAnimation();
+	
 
 	void FocusEnemy(AActor* LockActor);
 	void UnFocusEnemy();

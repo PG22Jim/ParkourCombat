@@ -42,21 +42,9 @@ bool AParkourCombatCharacter::IsParryingDamage(CharacterDamageType ReceiveDamage
 
 bool AParkourCombatCharacter::IsBlockingDamage(CharacterDamageType ReceiveDamageType)
 {
-	return (CurrentCombatStatus == CombatStatus::Parry || CurrentCombatStatus == CombatStatus::Block) && ReceiveDamageType != CharacterDamageType::HeavyDamage;
-}
-
-bool AParkourCombatCharacter::DamageReduction(float DamageAmount, bool IsBlock)
-{
-	if(IsBlock)
-	{
-		Health = UKismetMathLibrary::FClamp(Health - (DamageAmount - (DamageAmount * (PercentageToReduceDamage_Block / 100.0f))), 0.0f, MaxHealth);
-	}
-	else
-	{
-		Health = UKismetMathLibrary::FClamp(Health - DamageAmount, 0.0f, MaxHealth);
-	}
-
-	return Health > 0;
+	// TODO: If player is receiving heavy damage while blocking, stamina regen timer should resume
+	
+	return (CurrentCombatStatus == CombatStatus::Parry || CurrentCombatStatus == CombatStatus::Block) && ReceiveDamageType == CharacterDamageType::LightDamage;
 }
 
 void AParkourCombatCharacter::ClearRecordFunction(const FInputActionValue& Value)
@@ -67,9 +55,6 @@ void AParkourCombatCharacter::ClearRecordFunction(const FInputActionValue& Value
 void AParkourCombatCharacter::CharacterOnDeath()
 {
 	Super::CharacterOnDeath();
-
-
-
 }
 
 AParkourCombatCharacter::AParkourCombatCharacter()
@@ -122,6 +107,18 @@ void AParkourCombatCharacter::TryNormalAttack()
 		OnExecuteCombatAction.ExecuteIfBound(CombatStatus::NormalAttack);
 }
 
+void AParkourCombatCharacter::TryChargeAttack()
+{
+	if(AbleToMove)
+		OnExecuteCombatAction.ExecuteIfBound(CombatStatus::PreChargeAttack);
+}
+
+void AParkourCombatCharacter::TryCancelChargeAttack()
+{
+	if(AbleToMove)
+		IsChargeAttack = false;
+}
+
 void AParkourCombatCharacter::TryParry()
 {
 	if(AbleToMove)
@@ -145,6 +142,12 @@ void AParkourCombatCharacter::TryDodge()
 {
 	if(AbleToMove)
 		OnExecuteCombatAction.ExecuteIfBound(CombatStatus::CounterDodge);
+}
+
+void AParkourCombatCharacter::TryRageAttack()
+{
+	if(AbleToMove)
+		OnExecuteCombatAction.ExecuteIfBound(CombatStatus::SpecialAttack);
 }
 
 void AParkourCombatCharacter::TryHeal()
@@ -185,8 +188,17 @@ void AParkourCombatCharacter::BeginPlay()
 
 
 	Health = MaxHealth;
+	SetCurrentStamina(0);
 
+	const UWorld* World = GetWorld();
+	if(!World) return;
 
+	FTimerManager& WorldTimerManager = World->GetTimerManager();
+	
+	WorldTimerManager.SetTimer(StaminaRegenTimerHandle, this, &AParkourCombatCharacter::StaminaTickRegen, 0.05, true, -1);
+	WorldTimerManager.SetTimer(StaminaRegenCoolDownTimerHandle, this, &AParkourCombatCharacter::StaminaCoolDownTick, 0.05, true, -1);
+	WorldTimerManager.PauseTimer(StaminaRegenCoolDownTimerHandle);
+	
 }
 
 void AParkourCombatCharacter::Tick(float DeltaSeconds)
@@ -196,6 +208,7 @@ void AParkourCombatCharacter::Tick(float DeltaSeconds)
 	if(ActivateParry) OnExecuteCombatAction.ExecuteIfBound(CombatStatus::Parry);
 	else OnCancelParry.ExecuteIfBound();
 
+	if(CurrentCombatStatus == CombatStatus::PreChargeAttack && !IsChargeAttack) CancelChargeAttackDelegate.ExecuteIfBound();
 }
 
 void AParkourCombatCharacter::LinkListTest_AddRandomData()
@@ -281,6 +294,34 @@ void AParkourCombatCharacter::StopBackTracking()
 	
 }
 
+bool AParkourCombatCharacter::OnCostStamina(float CostAmount)
+{
+	const UWorld* World = GetWorld();
+	if(!World) return false;
+
+	FTimerManager& WorldTimerManager = World->GetTimerManager();
+	
+	const float CurrentStamina = GetCurrentStamina();
+	if(CurrentStamina < CostAmount) return false;
+
+	// TODO: Pause Regen Timer
+	WorldTimerManager.PauseTimer(StaminaRegenTimerHandle);
+	
+	SetCurrentStamina(CurrentStamina - CostAmount);
+	return true;
+}
+
+void AParkourCombatCharacter::StartStaminaRegenCoolDown()
+{
+	const UWorld* World = GetWorld();
+	if(!World) return;
+
+	FTimerManager& WorldTimerManager = World->GetTimerManager();
+
+	if(WorldTimerManager.IsTimerPaused(StaminaRegenCoolDownTimerHandle))
+		WorldTimerManager.UnPauseTimer(StaminaRegenCoolDownTimerHandle);
+}
+
 bool AParkourCombatCharacter::IsPlayerInvisible() const
 {
 	return CurrentCombatStatus == CombatStatus::SpecialAttack || CurrentCombatStatus == CombatStatus::DodgeSuccess || CurrentCombatStatus == CombatStatus::Dodge;
@@ -288,9 +329,11 @@ bool AParkourCombatCharacter::IsPlayerInvisible() const
 
 bool AParkourCombatCharacter::RevengeMeterIncrease()
 {
+	if(RevengeMeter >= MaxRevenge) return true;
+	
 	RevengeMeter = UKismetMathLibrary::FClamp(RevengeMeter + RevengeMeterAddingAmount, 0, MaxRevenge);
 
-	return RevengeMeter >= MaxRevenge;
+	return false;
 }
 
 UAnimMontage* AParkourCombatCharacter::GetCurrentAnimMontage() const
@@ -302,6 +345,11 @@ UAnimMontage* AParkourCombatCharacter::GetCurrentAnimMontage() const
 void AParkourCombatCharacter::UpdateJumpClimbStartZ()
 {
 	JumpClimbStartZ = GetMesh()->GetComponentLocation().Z;
+}
+
+void AParkourCombatCharacter::PlayReceiveRageAttackAnimation()
+{
+	PlayAnimMontage(ReceiveDamage_RageAttack, 1, NAME_None);
 }
 
 void AParkourCombatCharacter::FocusEnemy(AActor* LockActor)
@@ -341,6 +389,31 @@ void AParkourCombatCharacter::TickLockOn()
 	const FVector TargetPos = LockTarget->GetActorLocation();
 	const FRotator LookRot = UKismetMathLibrary::FindLookAtRotation(LookFromPos, TargetPos);
 	PlayerControl->SetControlRotation(LookRot);
+}
+
+void AParkourCombatCharacter::StaminaTickRegen()
+{
+	const float CurrentStamina = GetCurrentStamina();
+
+	if(CurrentStamina < GetMaxStamina())
+		SetCurrentStamina(CurrentStamina + 0.1f);
+}
+
+void AParkourCombatCharacter::StaminaCoolDownTick()
+{
+	CurrentStaminaCooldown += 0.05;
+	if(CurrentStaminaCooldown >= StaminaRegenCooldownTime)
+	{
+		CurrentStaminaCooldown = 0;
+
+		const UWorld* World = GetWorld();
+		if(!World) return;
+
+		FTimerManager& WorldTimerManager = World->GetTimerManager();
+		WorldTimerManager.PauseTimer(StaminaRegenCoolDownTimerHandle);
+		WorldTimerManager.UnPauseTimer(StaminaRegenTimerHandle);
+		
+	}
 }
 
 void AParkourCombatCharacter::DebugReceiveDamage()
@@ -429,9 +502,20 @@ void AParkourCombatCharacter::OnEnterSpecificState_Implementation(CombatStatus S
 	IPlayerCombatActionInterface::OnEnterSpecificState_Implementation(State);
 
 	if(IsInRewind) return;
+
+	if(CurrentCombatStatus == CombatStatus::CancelParry || CurrentCombatStatus == CombatStatus::Dodge || CurrentCombatStatus == CombatStatus::SpecialAttack)
+	{
+		StartStaminaRegenCoolDown();
+	}
 	
 	CurrentCombatStatus = State;
+	
 
+	if(CurrentCombatStatus == CombatStatus::ChargeAttack)
+	{
+		PerformChargeAttackDelegate.ExecuteIfBound();
+	}
+		
 	if(CurrentCombatStatus == CombatStatus::NormalAttack || CurrentCombatStatus == CombatStatus::SpecialAttack)
 	{
 		
@@ -567,6 +651,14 @@ void AParkourCombatCharacter::SetupPlayerInputComponent(class UInputComponent* P
 
 		// Dodge
 		EnhancedInputComponent->BindAction(DodgeAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryDodge);
+
+		// Charge Attack
+		EnhancedInputComponent->BindAction(ChargeAttackAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryChargeAttack);
+		EnhancedInputComponent->BindAction(CancelChargeAttack, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryCancelChargeAttack);
+
+		// Rage Attack
+		EnhancedInputComponent->BindAction(RageAttackAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryRageAttack);
+		
 		
 		//Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::Look);
