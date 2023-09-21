@@ -55,6 +55,15 @@ void AParkourCombatCharacter::ClearRecordFunction(const FInputActionValue& Value
 void AParkourCombatCharacter::CharacterOnDeath()
 {
 	Super::CharacterOnDeath();
+
+	const UWorld* World = GetWorld();
+	if(!World) return;
+
+	FTimerManager& WorldTimerManager = World->GetTimerManager();
+
+	WorldTimerManager.PauseTimer(StaminaRegenTimerHandle);
+	WorldTimerManager.PauseTimer(StaminaRegenCoolDownTimerHandle);
+	OnPlayerPauseRecordOnDeathDelegate.ExecuteIfBound();
 }
 
 AParkourCombatCharacter::AParkourCombatCharacter()
@@ -121,38 +130,53 @@ void AParkourCombatCharacter::TryCancelChargeAttack()
 
 void AParkourCombatCharacter::TryParry()
 {
-	if(AbleToMove)
-		ActivateParry = true;
+	if(AbleToMove && EnableGuard)
+		if(CurrentCombatStatus != CombatStatus::SpecialAttack)
+			ActivateParry = true;
 }
 
 void AParkourCombatCharacter::TryCancelParry()
 {
-	if(AbleToMove)
+	if(AbleToMove && EnableGuard)
 		ActivateParry = false;
 }
 
 void AParkourCombatCharacter::TryRangeAttack()
 {
-	if(AbleToMove)
+	if(AbleToMove && EnableRangeAttack)
 		OnExecuteCombatAction.ExecuteIfBound(CombatStatus::RangeAttack);
 
 }
 
 void AParkourCombatCharacter::TryDodge()
 {
-	if(AbleToMove)
+	if(AbleToMove && EnableDodge)
 		OnExecuteCombatAction.ExecuteIfBound(CombatStatus::CounterDodge);
 }
 
 void AParkourCombatCharacter::TryRageAttack()
 {
-	if(AbleToMove)
+	if(AbleToMove && EnableRageAttack)
 		OnExecuteCombatAction.ExecuteIfBound(CombatStatus::SpecialAttack);
 }
 
 void AParkourCombatCharacter::TryHeal()
 {
-	if(AbleToMove) Super::TryHeal();
+	if(AbleToMove && EnableHealItem)
+	{
+		if(CurrentCombatStatus == CombatStatus::DodgeSuccess && AbleToHeal() && IsNecessaryToHeal())
+		{
+			if(!UseHealItemAnim) return;
+	
+			CurrentCombatStatus = CombatStatus::SpecialAttack;
+			UGameplayStatics::SetGlobalTimeDilation(GetWorld(), 1);
+			StopAnimMontage();
+			PlayAnimMontage(UseHealItemAnim, 3, "Start");
+			
+			return;
+		}
+		Super::TryHeal();
+	}
 }
 
 void AParkourCombatCharacter::BeginPlay()
@@ -187,8 +211,7 @@ void AParkourCombatCharacter::BeginPlay()
 	}
 
 
-	Health = MaxHealth;
-	SetCurrentStamina(0);
+	SetCurrentStamina(100);
 
 	const UWorld* World = GetWorld();
 	if(!World) return;
@@ -253,16 +276,16 @@ void AParkourCombatCharacter::LinkListTest_ClearAll()
 
 void AParkourCombatCharacter::LinkListTest_DrawPosSphere()
 {
-	bool isBound = OnStartRewindDelegate.ExecuteIfBound();
+	if(!EnableRewindAbility) return;
 	
-	// const UWorld* World = GetWorld();
-	// if(!World) return;
-	//
-	// FTimerManager& WorldTimerManager = World->GetTimerManager();
-	//
-	// WorldTimerManager.PauseTimer(RecordPositionTimerHandle);
-	// WorldTimerManager.SetTimer(BackTrackingTimerHandle,this, &AParkourCombatCharacter::BackTrackTransform, 0.015, true, -1);
-	// WorldTimerManager.SetTimer(StopBackTrackTimerHandle,this, &AParkourCombatCharacter::StopBackTracking, 10.0f, false, -1);
+	bool isBound = OnStartRewindDelegate.ExecuteIfBound();
+}
+
+void AParkourCombatCharacter::OnRewindButtonPressed()
+{
+	if(!EnableRewindAbility || CurrentCombatStatus == CombatStatus::DodgeSuccess) return;
+	
+	bool isBound = OnStartRewindDelegate.ExecuteIfBound();
 }
 
 void AParkourCombatCharacter::RecordCurrentPositionToList()
@@ -322,6 +345,16 @@ void AParkourCombatCharacter::StartStaminaRegenCoolDown()
 		WorldTimerManager.UnPauseTimer(StaminaRegenCoolDownTimerHandle);
 }
 
+void AParkourCombatCharacter::RewindProperty(float CurrentPlayerHP, float CurrentPlayerStamina,
+                                             float CurrentPlayerRevenge, float CurrentPlayerRageGauge, int ComboCount)
+{
+	SetCurrentHealth(CurrentPlayerHP);
+	SetCurrentStamina(CurrentPlayerStamina);
+	RevengeMeter = CurrentPlayerRevenge;
+	SetCurrentRageGage(CurrentPlayerRageGauge);
+	SetComboCount(ComboCount);
+}
+
 bool AParkourCombatCharacter::IsPlayerInvisible() const
 {
 	return CurrentCombatStatus == CombatStatus::SpecialAttack || CurrentCombatStatus == CombatStatus::DodgeSuccess || CurrentCombatStatus == CombatStatus::Dodge;
@@ -340,6 +373,28 @@ UAnimMontage* AParkourCombatCharacter::GetCurrentAnimMontage() const
 {
 	// Add method to decide which montage should be playing
 	return GetCurrentMontage();
+}
+
+void AParkourCombatCharacter::PauseStaminaRegenTimers()
+{
+	const UWorld* World = GetWorld();
+	if(!World) return;
+
+	FTimerManager& WorldTimerManager = World->GetTimerManager();
+
+	if(WorldTimerManager.IsTimerPaused(StaminaRegenTimerHandle)) WorldTimerManager.UnPauseTimer(StaminaRegenTimerHandle);
+	if(WorldTimerManager.IsTimerPaused(StaminaRegenCoolDownTimerHandle)) WorldTimerManager.UnPauseTimer(StaminaRegenCoolDownTimerHandle);
+}
+
+void AParkourCombatCharacter::ResumeStaminaRegenTimers()
+{
+	const UWorld* World = GetWorld();
+	if(!World) return;
+
+	FTimerManager& WorldTimerManager = World->GetTimerManager();
+
+	if(WorldTimerManager.IsTimerPaused(StaminaRegenTimerHandle)) WorldTimerManager.UnPauseTimer(StaminaRegenTimerHandle);
+	if(WorldTimerManager.IsTimerActive(StaminaRegenCoolDownTimerHandle)) WorldTimerManager.PauseTimer(StaminaRegenCoolDownTimerHandle);
 }
 
 void AParkourCombatCharacter::UpdateJumpClimbStartZ()
@@ -553,13 +608,14 @@ void AParkourCombatCharacter::ReceiveDamage_Implementation(AActor* DamageCauser,
 
 	
 	//if(IsPlayerInvisible() || CurrentCombatStatus == CombatStatus::ReceiveDamage) return;
-	if(IsPlayerInvisible()) return;
+	if(!IsCharacterAbleToReceiveDamage(ReceivingDamageType)) return;
 
 	// if dodge success
 	if(CurrentCombatStatus == CombatStatus::CounterDodge)
 	{
 		if(!DamageCauser) return;
 		SetAttackTarget(DamageCauser);
+		ActivateParry = false;
 		OnDodgeSuccessDelegate.ExecuteIfBound();
 		return;
 	}
@@ -580,11 +636,12 @@ void AParkourCombatCharacter::ReceiveDamage_Implementation(AActor* DamageCauser,
 	// damage reduction, check if player is still alive after receive damage
 	if(DamageReduction(DamageAmount, bBlockingDamage))
 	{
+		OnDamageReceived(DamageCauser, ReceivingDamageType);
 		OnReceiveDamage.ExecuteIfBound(DamageCauser, bBlockingDamage, DamageReceiveLocation, ReceivingDamageType);
 		return;
 	}
 
-	// TODO: if player is dead
+	// if player is dead
 
 	CharacterOnDeath();
 }
@@ -607,6 +664,13 @@ void AParkourCombatCharacter::OnFinishDodgeSuccessTime_Implementation()
 	UGameplayStatics::SetGlobalTimeDilation(GetWorld(), 1);
 	
 	OnEnterSpecificState_Implementation(CombatStatus::Idle);
+}
+
+void AParkourCombatCharacter::OnPlayerDeath_Implementation()
+{
+	IPlayerCombatActionInterface::OnPlayerDeath_Implementation();
+
+	PlayerDeathDelegate.ExecuteIfBound();
 }
 
 
@@ -658,6 +722,12 @@ void AParkourCombatCharacter::SetupPlayerInputComponent(class UInputComponent* P
 
 		// Rage Attack
 		EnhancedInputComponent->BindAction(RageAttackAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryRageAttack);
+
+		// Rewind Ability
+		EnhancedInputComponent->BindAction(RewindAbilityAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::OnRewindButtonPressed);
+		
+		EnhancedInputComponent->BindAction(PauseAction, ETriggerEvent::Triggered, this, &AParkourCombatCharacter::TryPauseGame);
+		
 		
 		
 		//Looking

@@ -39,7 +39,6 @@ void UPlayerParkourComponent::BeginPlay()
 	
 	InitializeDelegate();
 
-	// TODO: UnComment it
 	ParkourTickStart();
 }
 
@@ -125,7 +124,8 @@ void UPlayerParkourComponent::ParkourTickCheck()
 	// if player is in running state, run logic in running state
 	if(CurrentParkourStatus == ParkourStatus::Running)
 	{
-		InRunningState();
+		// TODO: UnComment it
+		//InRunningState();
 	}
 }
 

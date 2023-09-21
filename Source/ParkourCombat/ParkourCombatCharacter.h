@@ -26,6 +26,9 @@ DECLARE_DYNAMIC_DELEGATE_FourParams(FOnReceiveDamage, AActor*, DamageCauser, boo
 DECLARE_DYNAMIC_DELEGATE(FOnDodgeSuccess);
 DECLARE_DYNAMIC_DELEGATE(FCancelChargeAttack);
 DECLARE_DYNAMIC_DELEGATE(FPerformChargeAttack);
+DECLARE_DYNAMIC_DELEGATE(FOnPauseGame);
+DECLARE_DYNAMIC_DELEGATE(FOnPlayerDeath);
+DECLARE_DYNAMIC_DELEGATE(FOnPlayerPauseRecordOnDeath);
 
 
 
@@ -59,10 +62,18 @@ private:
 	bool CanMove();
 	bool IsParryingDamage(CharacterDamageType ReceiveDamageType);
 	bool IsBlockingDamage(CharacterDamageType ReceiveDamageType);
-	
+
+	int32 CurrentComboCount = 0;
 
 	bool IsChargeAttack = false;
-	
+
+	bool EnableDodge = true;
+	bool EnableGuard = true;
+	bool EnableRangeAttack = true;
+	bool EnableRageAttack = true;
+	bool EnableHealItem = true;
+	bool EnableRewindAbility = true;
+
 protected:
 
 
@@ -126,6 +137,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* RageAttackAction;
 	
+	/** Rewind Ability Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* RewindAbilityAction;
+	
 	/** Move Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* MoveAction;
@@ -133,6 +148,11 @@ protected:
 	/** Look Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* LookAction;
+
+	/** Pause Input Action */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* PauseAction;
+
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FVector MovementInputVector;
@@ -151,6 +171,13 @@ protected:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	bool ActivateParry = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	int32 RewindAvailableTime = 4;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	int32 MaxRewindAvailableTime = 4;
+
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category= DebugSetting)
 	AActor* DebugCounterTarget;
@@ -177,6 +204,11 @@ public:
 	FOnDodgeSuccess OnDodgeSuccessDelegate;
 	FCancelChargeAttack CancelChargeAttackDelegate;
 	FPerformChargeAttack PerformChargeAttackDelegate;
+	FOnPlayerPauseRecordOnDeath OnPlayerPauseRecordOnDeathDelegate;
+
+	FOnPlayerDeath PlayerDeathDelegate;
+	
+	FOnPauseGame OnPauseGameDelegate;
 
 	ParkourMovementLinkedList* StoredDestinationList = new ParkourMovementLinkedList();
 	BackTrackData_Stack* CurrenBackTrackData = new BackTrackData_Stack();
@@ -213,6 +245,9 @@ protected:
 
 	UFUNCTION()
 	void TryRageAttack();
+
+	UFUNCTION()
+	void TryPauseGame() {OnPauseGameDelegate.ExecuteIfBound();}
 
 	virtual void TryHeal() override;
 
@@ -264,6 +299,9 @@ protected:
 	UFUNCTION(BlueprintCallable)
 	void LinkListTest_DrawPosSphere();
 
+	UFUNCTION()
+	void OnRewindButtonPressed();
+	
 	UFUNCTION(BlueprintImplementableEvent)
 	void DrawTransSphere(FTransform DrawingTrans);
 
@@ -282,6 +320,14 @@ public:
 
 
 	// ================================================== Get And Set ============================================================
+
+	void ResetComboCount() {CurrentComboCount = 0;}
+
+	UFUNCTION()
+	void SetComboCount(int32 NewComboCount) {CurrentComboCount = NewComboCount;}
+	UFUNCTION()
+	int32 GetComboCount() const {return CurrentComboCount;}
+	
 	
 	ParkourStatus GetCurrentParkourStatus() const {return CurrentParkourStatus;}
 	void SetCurrentParkourStatus(ParkourStatus NewStatus) { CurrentParkourStatus = NewStatus;}
@@ -289,6 +335,15 @@ public:
 
 	bool OnCostStamina(float CostAmount);
 	void StartStaminaRegenCoolDown();
+	
+	int32 GetRewindAvailableTime() const {return RewindAvailableTime;}
+	int32 GetMaxRewindAvailableTime() const {return MaxRewindAvailableTime;}
+	bool OnRewindAbilityUseConfirm() {RewindAvailableTime--; return RewindAvailableTime > 0;}
+	bool IsAbleRewind() const {return RewindAvailableTime > 0;}
+	void OnRewindTutorial() { MaxRewindAvailableTime = 99; RewindAvailableTime = MaxRewindAvailableTime; }
+	void RewindProperty(float CurrentPlayerHP, float CurrentPlayerStamina, float CurrentPlayerRevenge, float CurrentPlayerRageGauge, int ComboCount);
+	
+	
 	
 	
 	AActor* GetAttackTarget() const {return AttackTarget;}
@@ -318,7 +373,24 @@ public:
 	void SetWallClimbMontage(UAnimMontage* NewMontage) {WallClimbMontage = NewMontage;}
 	
 
+	bool GetEnableDodge() const {return EnableDodge;}
+	bool GetEnableGuard() const {return EnableGuard;}
+	bool GetEnableRangeAttack() const {return EnableRangeAttack;}
+	bool GetEnableRageAttack() const {return EnableRageAttack;}
+	bool GetEnableHealItem() const {return EnableHealItem;}
 
+	void SetEnableDodge(bool bEnable) {EnableDodge = bEnable;}
+	void SetEnableGuard(bool bEnable) {EnableGuard = bEnable;}
+	void SetEnableHealItem(bool bEnable) {EnableHealItem = bEnable;}
+	void SetEnableRageAttack(bool bEnable) {EnableRageAttack = bEnable;}
+	void SetEnableRangeAttack(bool bEnable) {EnableRangeAttack = bEnable;}
+	void SetEnableRewindAbility(bool bEnable) {EnableRewindAbility = bEnable;}
+
+
+	void PauseStaminaRegenTimers();
+	void ResumeStaminaRegenTimers();
+	
+	
 	
 	void UpdateJumpClimbStartZ();
 	void PlayReceiveRageAttackAnimation();
@@ -369,6 +441,7 @@ public:
 	virtual void ReceiveDamage_Implementation(AActor* DamageCauser, float DamageAmount, FVector DamageReceiveLocation, CharacterDamageType ReceivingDamageType) override;
 	virtual void OnFinishHealItemAnim_Implementation() override;
 	virtual void OnFinishDodgeSuccessTime_Implementation() override;
+	virtual void OnPlayerDeath_Implementation() override;
 };
 
 

@@ -9,6 +9,6 @@ public class ParkourCombat : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", 
-			"InputCore", "HeadMountedDisplay", "EnhancedInput", "MotionWarping", "GameplayTasks", "UMG", "UMGEditor" });
+			"InputCore", "HeadMountedDisplay", "EnhancedInput", "MotionWarping", "GameplayTasks", "UMG", "UMGEditor", "Slate", "SlateCore" });
 	}
 }

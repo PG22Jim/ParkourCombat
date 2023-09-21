@@ -37,6 +37,9 @@ enum class CombatStatus: uint8
 	Dodge = 16 UMETA(DisplayName = "Dodge"),
 	DodgeSuccess = 17 UMETA(DisplayName = "DodgeSuccess"),
 	PreChargeAttack = 18 UMETA(DisplayName = "PreChargeAttack"),
+	RageAttackVictim = 19 UMETA(DisplayName = "RageAttackVictim"),
+	Died = 20 UMETA(DisplayName = "RageAttackVictim"),
+	
 };
 
 UENUM(BlueprintType)
