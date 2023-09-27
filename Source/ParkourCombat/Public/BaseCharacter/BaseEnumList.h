@@ -3,6 +3,7 @@
 
 #pragma once
 
+// damage type enum
 UENUM(BlueprintType)
 enum class CharacterDamageType: uint8
 {
